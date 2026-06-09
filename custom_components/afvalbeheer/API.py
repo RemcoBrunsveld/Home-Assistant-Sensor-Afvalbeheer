@@ -10,7 +10,7 @@ from .models import WasteCollectionRepository
 from .collectors import (
     XimmioCollector, BurgerportaalCollector, OpzetCollector, KlikogroepCollector,
     AfvalAlertCollector, AfvalwijzerCollector, AmsterdamCollector, CirculusCollector, CleanprofsCollector,
-    DeAfvalAppCollector, LimburgNetCollector, IradoCollector, MontferlandNetCollector, OmrinCollector,
+    CustomCollector, DeAfvalAppCollector, LimburgNetCollector, IradoCollector, MontferlandNetCollector, OmrinCollector,
     RD4Collector, RecycleApp, ReinisCollector, ROVACollector, StraatbeeldCollector
 )
 
@@ -23,7 +23,7 @@ class WasteData(object):
     Manages waste data and schedules updates.
     """
 
-    def __init__(self, hass, waste_collector, city_name, postcode, street_name, street_number, suffix, custom_mapping, address_id, print_waste_type, print_waste_type_slugs, update_interval, customer_id, email=None, password=None):
+    def __init__(self, hass, waste_collector, city_name, postcode, street_name, street_number, suffix, custom_mapping, address_id, print_waste_type, print_waste_type_slugs, update_interval, customer_id, email=None, password=None, custom_dates=None, custom_waste_type=None):
         self.hass = hass
         self.waste_collector = waste_collector
         self.city_name = city_name
@@ -40,6 +40,8 @@ class WasteData(object):
         self.email = email
         self.password = password
         self.custom_mapping = custom_mapping
+        self.custom_dates = custom_dates
+        self.custom_waste_type = custom_waste_type
         self.__select_collector()
 
     def __select_collector(self):
@@ -64,6 +66,7 @@ class WasteData(object):
             "cleanprofs": (CleanprofsCollector, common_args),
             "rova": (ROVACollector, common_args),
             "drimmelen": (StraatbeeldCollector, common_args),
+            "custom": (CustomCollector, [self.hass, self.custom_waste_type, self.custom_dates, self.custom_mapping]),
             **{key: (BurgerportaalCollector, common_args) for key in BURGERPORTAAL_COLLECTOR_IDS.keys()},
             **{key: (OpzetCollector, common_args) for key in OPZET_COLLECTOR_URLS.keys()},
             **{key: (KlikogroepCollector, common_args) for key in KLIKOGROEP_COLLECTOR_IDS.keys()},
@@ -130,7 +133,13 @@ def get_wastedata_from_config(hass, config):
     email = config.get(CONF_EMAIL)
     password = config.get(CONF_PASSWORD)
     custom_mapping = config.get(CONF_CUSTOM_MAPPING)
-    config["id"] = _format_id(waste_collector, postcode, street_number)
+    custom_dates = config.get(CONF_CUSTOM_DATES)
+    custom_waste_type = config.get(CONF_CUSTOM_WASTE_TYPE)
+
+    if waste_collector == "custom":
+        config["id"] = _format_id(waste_collector, custom_waste_type or "unknown", "0")
+    else:
+        config["id"] = _format_id(waste_collector, postcode, street_number)
 
     if waste_collector in DEPRECATED_AND_NEW_WASTECOLLECTORS:
         persistent_notification.create(
@@ -175,6 +184,8 @@ def get_wastedata_from_config(hass, config):
         customer_id,
         email,
         password,
+        custom_dates,
+        custom_waste_type,
     )
 
 

@@ -12,7 +12,8 @@ from .const import (
     CONF_DATE_OBJECT, CONF_BUILT_IN_ICONS, CONF_BUILT_IN_ICONS_NEW, CONF_DISABLE_ICONS,
     CONF_TRANSLATE_DAYS, CONF_DAY_OF_WEEK, CONF_DAY_OF_WEEK_ONLY, CONF_ALWAYS_SHOW_DAY,
     CONF_STREET_NAME, CONF_CITY_NAME, CONF_ADDRESS_ID, CONF_CUSTOMER_ID, CONF_UPDATE_INTERVAL,
-    CONF_CUSTOM_MAPPING, DEFAULT_CONFIG, XIMMIO_COLLECTOR_IDS, CONF_EMAIL, CONF_PASSWORD
+    CONF_CUSTOM_MAPPING, DEFAULT_CONFIG, XIMMIO_COLLECTOR_IDS, CONF_EMAIL, CONF_PASSWORD,
+    CONF_CUSTOM_DATES, CONF_CUSTOM_WASTE_TYPE, PREDEFINED_WASTE_TYPES
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 WASTE_COLLECTORS = [
     "ACV", "Afval3xBeter", "Afvalstoffendienstkalender", "AfvalAlert",
     "Almere", "AlphenAanDenRijn", "Amsterdam", "AreaReiniging", "Assen", "Avalex", "Avri", "BAR",
-    "Berkelland", "Blink", "Circulus", "Cleanprofs", "Cranendonck",
+    "Berkelland", "Blink", "Circulus", "Cleanprofs", "Cranendonck", "Custom",
     "Cyclus", "DAR", "DeAfvalApp", "DeFryskeMarren", "DenHaag", "Drimmelen", "GAD",
     "Groningen", "Hellendoorn", "HVC", "Irado", "Limburg.NET", "Lingewaard", "Maassluis", "Meerlanden",
     "Middelburg-Vlissingen", "MijnAfvalwijzer", "Mijnafvalzaken", "Montferland",
@@ -41,6 +42,7 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         super().__init__()
         self._custom_mapping = {}
         self._omrin_credentials = {}
+        self._custom_dates = []
     
 
     async def async_step_import(self, import_config):
@@ -215,12 +217,143 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             self._collector = user_input[CONF_WASTE_COLLECTOR]
+            if self._collector == "Custom":
+                return await self.async_step_custom_name()
             return await self.async_step_address()
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({
                 vol.Required(CONF_WASTE_COLLECTOR, default=""): vol.In(WASTE_COLLECTORS),
             }),
+            errors=errors,
+        )
+
+    async def async_step_custom_name(self, user_input=None):
+        """Step to enter a custom name for the custom collector."""
+        errors = {}
+        if user_input is not None:
+            self._custom_name = user_input.get(CONF_NAME, "")
+            if not self._custom_name.strip():
+                errors["base"] = "name_required"
+            else:
+                return await self.async_step_custom_waste_type()
+
+        return self.async_show_form(
+            step_id="custom_name",
+            data_schema=vol.Schema({
+                vol.Required(CONF_NAME): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+                ),
+            }),
+            errors=errors,
+        )
+
+    async def async_step_custom_waste_type(self, user_input=None):
+        """Step to select a waste type from predefined list."""
+        errors = {}
+        if user_input is not None:
+            self._custom_waste_type = user_input[CONF_CUSTOM_WASTE_TYPE]
+            self._custom_dates = []
+            return await self.async_step_custom_dates()
+
+        return self.async_show_form(
+            step_id="custom_waste_type",
+            data_schema=vol.Schema({
+                vol.Required(CONF_CUSTOM_WASTE_TYPE): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=PREDEFINED_WASTE_TYPES,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }),
+            errors=errors,
+        )
+
+    async def async_step_custom_dates(self, user_input=None):
+        """Step to add collection dates one at a time."""
+        errors = {}
+        if user_input is not None:
+            date_value = user_input.get("date")
+            add_another = user_input.get("add_another", False)
+
+            if date_value:
+                self._custom_dates.append(date_value)
+
+            if add_another:
+                return await self.async_step_custom_dates()
+            else:
+                if not self._custom_dates:
+                    errors["base"] = "no_dates"
+                else:
+                    return await self.async_step_custom_options()
+
+        dates_description = ""
+        if self._custom_dates:
+            dates_description = "\n".join(
+                f"• {d}" for d in sorted(self._custom_dates)
+            )
+
+        return self.async_show_form(
+            step_id="custom_dates",
+            data_schema=vol.Schema({
+                vol.Required("date"): selector.DateSelector(),
+                vol.Optional("add_another", default=True): selector.BooleanSelector(),
+            }),
+            errors=errors,
+            description_placeholders={"dates_added": dates_description or "None yet"},
+        )
+
+    async def async_step_custom_options(self, user_input=None):
+        """Step to configure display options for the custom collector."""
+        errors = {}
+        if user_input is not None:
+            data = {
+                CONF_WASTE_COLLECTOR: "Custom",
+                CONF_NAME: self._custom_name,
+                CONF_CUSTOM_WASTE_TYPE: self._custom_waste_type,
+                CONF_CUSTOM_DATES: sorted(self._custom_dates),
+                CONF_RESOURCES: [self._custom_waste_type],
+                CONF_NAME_PREFIX: user_input.get(CONF_NAME_PREFIX, DEFAULT_CONFIG[CONF_NAME_PREFIX]),
+                CONF_DATE_FORMAT: user_input.get(CONF_DATE_FORMAT, DEFAULT_CONFIG[CONF_DATE_FORMAT]),
+                CONF_UPCOMING: user_input.get(CONF_UPCOMING, DEFAULT_CONFIG[CONF_UPCOMING]),
+                CONF_DATE_ONLY: user_input.get(CONF_DATE_ONLY, DEFAULT_CONFIG[CONF_DATE_ONLY]),
+                CONF_DATE_OBJECT: user_input.get(CONF_DATE_OBJECT, DEFAULT_CONFIG[CONF_DATE_OBJECT]),
+                CONF_TRANSLATE_DAYS: user_input.get(CONF_TRANSLATE_DAYS, DEFAULT_CONFIG[CONF_TRANSLATE_DAYS]),
+                CONF_DAY_OF_WEEK: user_input.get(CONF_DAY_OF_WEEK, DEFAULT_CONFIG[CONF_DAY_OF_WEEK]),
+                CONF_DAY_OF_WEEK_ONLY: user_input.get(CONF_DAY_OF_WEEK_ONLY, DEFAULT_CONFIG[CONF_DAY_OF_WEEK_ONLY]),
+                CONF_ALWAYS_SHOW_DAY: user_input.get(CONF_ALWAYS_SHOW_DAY, DEFAULT_CONFIG[CONF_ALWAYS_SHOW_DAY]),
+                CONF_BUILT_IN_ICONS: user_input.get(CONF_BUILT_IN_ICONS, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS]),
+                CONF_BUILT_IN_ICONS_NEW: user_input.get(CONF_BUILT_IN_ICONS_NEW, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS_NEW]),
+                CONF_DISABLE_ICONS: user_input.get(CONF_DISABLE_ICONS, DEFAULT_CONFIG[CONF_DISABLE_ICONS]),
+                CONF_CUSTOM_MAPPING: {},
+                CONF_POSTCODE: "",
+                CONF_STREET_NUMBER: "",
+                CONF_SUFFIX: "",
+                CONF_ID: str(uuid.uuid4()),
+            }
+            return self.async_create_entry(
+                title=f"Custom - {self._custom_name} ({self._custom_waste_type})",
+                data=data,
+            )
+
+        schema_dict = {
+            vol.Optional(CONF_NAME_PREFIX, default=DEFAULT_CONFIG[CONF_NAME_PREFIX]): selector.BooleanSelector(),
+            vol.Optional(CONF_DATE_FORMAT, default=DEFAULT_CONFIG[CONF_DATE_FORMAT]): selector.TextSelector(),
+            vol.Optional(CONF_UPCOMING, default=DEFAULT_CONFIG[CONF_UPCOMING]): selector.BooleanSelector(),
+            vol.Optional(CONF_DATE_ONLY, default=DEFAULT_CONFIG[CONF_DATE_ONLY]): selector.BooleanSelector(),
+            vol.Optional(CONF_DATE_OBJECT, default=DEFAULT_CONFIG[CONF_DATE_OBJECT]): selector.BooleanSelector(),
+            vol.Optional(CONF_TRANSLATE_DAYS, default=DEFAULT_CONFIG[CONF_TRANSLATE_DAYS]): selector.BooleanSelector(),
+            vol.Optional(CONF_DAY_OF_WEEK, default=DEFAULT_CONFIG[CONF_DAY_OF_WEEK]): selector.BooleanSelector(),
+            vol.Optional(CONF_DAY_OF_WEEK_ONLY, default=DEFAULT_CONFIG[CONF_DAY_OF_WEEK_ONLY]): selector.BooleanSelector(),
+            vol.Optional(CONF_ALWAYS_SHOW_DAY, default=DEFAULT_CONFIG[CONF_ALWAYS_SHOW_DAY]): selector.BooleanSelector(),
+            vol.Optional(CONF_BUILT_IN_ICONS, default=DEFAULT_CONFIG[CONF_BUILT_IN_ICONS]): selector.BooleanSelector(),
+            vol.Optional(CONF_BUILT_IN_ICONS_NEW, default=DEFAULT_CONFIG[CONF_BUILT_IN_ICONS_NEW]): selector.BooleanSelector(),
+            vol.Optional(CONF_DISABLE_ICONS, default=DEFAULT_CONFIG[CONF_DISABLE_ICONS]): selector.BooleanSelector(),
+        }
+
+        return self.async_show_form(
+            step_id="custom_options",
+            data_schema=vol.Schema(schema_dict),
             errors=errors,
         )
 
@@ -511,6 +644,7 @@ class AfvalbeheerOptionsFlowHandler(config_entries.OptionsFlow):
         self._address_input = {}
         self._custom_mapping = {}
         self._omrin_credentials = {}
+        self._custom_dates = []
 
     @property
     def config_entry(self):
@@ -519,6 +653,8 @@ class AfvalbeheerOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         if user_input is not None:
             self._collector = user_input[CONF_WASTE_COLLECTOR]
+            if self._collector == "Custom":
+                return await self.async_step_custom_name()
             return await self.async_step_address()
 
         # Get current collector and find case-insensitive match
@@ -538,6 +674,139 @@ class AfvalbeheerOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=vol.Schema({
                 vol.Required(CONF_WASTE_COLLECTOR, default=default_collector): vol.In(WASTE_COLLECTORS),
             }),
+        )
+
+    async def async_step_custom_name(self, user_input=None):
+        """Step to enter a custom name for the custom collector."""
+        errors = {}
+        current = {**self.config_entry.data, **self.config_entry.options}
+        current_name = current.get(CONF_NAME, "")
+
+        if user_input is not None:
+            self._custom_name = user_input.get(CONF_NAME, "")
+            if not self._custom_name.strip():
+                errors["base"] = "name_required"
+            else:
+                return await self.async_step_custom_waste_type()
+
+        return self.async_show_form(
+            step_id="custom_name",
+            data_schema=vol.Schema({
+                vol.Required(CONF_NAME, default=current_name): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+                ),
+            }),
+            errors=errors,
+        )
+
+    async def async_step_custom_waste_type(self, user_input=None):
+        """Step to select a waste type from predefined list."""
+        errors = {}
+        current = {**self.config_entry.data, **self.config_entry.options}
+        current_waste_type = current.get(CONF_CUSTOM_WASTE_TYPE, "")
+
+        if user_input is not None:
+            self._custom_waste_type = user_input[CONF_CUSTOM_WASTE_TYPE]
+            self._custom_dates = list(current.get(CONF_CUSTOM_DATES, []))
+            return await self.async_step_custom_dates()
+
+        return self.async_show_form(
+            step_id="custom_waste_type",
+            data_schema=vol.Schema({
+                vol.Required(CONF_CUSTOM_WASTE_TYPE, default=current_waste_type): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=PREDEFINED_WASTE_TYPES,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }),
+            errors=errors,
+        )
+
+    async def async_step_custom_dates(self, user_input=None):
+        """Step to add collection dates one at a time."""
+        errors = {}
+        if user_input is not None:
+            date_value = user_input.get("date")
+            add_another = user_input.get("add_another", False)
+
+            if date_value:
+                self._custom_dates.append(date_value)
+
+            if add_another:
+                return await self.async_step_custom_dates()
+            else:
+                if not self._custom_dates:
+                    errors["base"] = "no_dates"
+                else:
+                    return await self.async_step_custom_options()
+
+        dates_description = ""
+        if self._custom_dates:
+            dates_description = "\n".join(
+                f"• {d}" for d in sorted(self._custom_dates)
+            )
+
+        return self.async_show_form(
+            step_id="custom_dates",
+            data_schema=vol.Schema({
+                vol.Required("date"): selector.DateSelector(),
+                vol.Optional("add_another", default=True): selector.BooleanSelector(),
+            }),
+            errors=errors,
+            description_placeholders={"dates_added": dates_description or "None yet"},
+        )
+
+    async def async_step_custom_options(self, user_input=None):
+        """Step to configure display options for the custom collector."""
+        errors = {}
+        current = {**self.config_entry.data, **self.config_entry.options}
+
+        if user_input is not None:
+            new_options = {
+                CONF_WASTE_COLLECTOR: "Custom",
+                CONF_NAME: self._custom_name,
+                CONF_CUSTOM_WASTE_TYPE: self._custom_waste_type,
+                CONF_CUSTOM_DATES: sorted(self._custom_dates),
+                CONF_RESOURCES: [self._custom_waste_type],
+                CONF_NAME_PREFIX: user_input.get(CONF_NAME_PREFIX, DEFAULT_CONFIG[CONF_NAME_PREFIX]),
+                CONF_DATE_FORMAT: user_input.get(CONF_DATE_FORMAT, DEFAULT_CONFIG[CONF_DATE_FORMAT]),
+                CONF_UPCOMING: user_input.get(CONF_UPCOMING, DEFAULT_CONFIG[CONF_UPCOMING]),
+                CONF_DATE_ONLY: user_input.get(CONF_DATE_ONLY, DEFAULT_CONFIG[CONF_DATE_ONLY]),
+                CONF_DATE_OBJECT: user_input.get(CONF_DATE_OBJECT, DEFAULT_CONFIG[CONF_DATE_OBJECT]),
+                CONF_TRANSLATE_DAYS: user_input.get(CONF_TRANSLATE_DAYS, DEFAULT_CONFIG[CONF_TRANSLATE_DAYS]),
+                CONF_DAY_OF_WEEK: user_input.get(CONF_DAY_OF_WEEK, DEFAULT_CONFIG[CONF_DAY_OF_WEEK]),
+                CONF_DAY_OF_WEEK_ONLY: user_input.get(CONF_DAY_OF_WEEK_ONLY, DEFAULT_CONFIG[CONF_DAY_OF_WEEK_ONLY]),
+                CONF_ALWAYS_SHOW_DAY: user_input.get(CONF_ALWAYS_SHOW_DAY, DEFAULT_CONFIG[CONF_ALWAYS_SHOW_DAY]),
+                CONF_BUILT_IN_ICONS: user_input.get(CONF_BUILT_IN_ICONS, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS]),
+                CONF_BUILT_IN_ICONS_NEW: user_input.get(CONF_BUILT_IN_ICONS_NEW, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS_NEW]),
+                CONF_DISABLE_ICONS: user_input.get(CONF_DISABLE_ICONS, DEFAULT_CONFIG[CONF_DISABLE_ICONS]),
+                CONF_CUSTOM_MAPPING: {},
+                CONF_POSTCODE: "",
+                CONF_STREET_NUMBER: "",
+                CONF_SUFFIX: "",
+            }
+            return self.async_create_entry(title="", data=new_options)
+
+        schema_dict = {
+            vol.Optional(CONF_NAME_PREFIX, default=current.get(CONF_NAME_PREFIX, DEFAULT_CONFIG[CONF_NAME_PREFIX])): selector.BooleanSelector(),
+            vol.Optional(CONF_DATE_FORMAT, default=current.get(CONF_DATE_FORMAT, DEFAULT_CONFIG[CONF_DATE_FORMAT])): selector.TextSelector(),
+            vol.Optional(CONF_UPCOMING, default=current.get(CONF_UPCOMING, DEFAULT_CONFIG[CONF_UPCOMING])): selector.BooleanSelector(),
+            vol.Optional(CONF_DATE_ONLY, default=current.get(CONF_DATE_ONLY, DEFAULT_CONFIG[CONF_DATE_ONLY])): selector.BooleanSelector(),
+            vol.Optional(CONF_DATE_OBJECT, default=current.get(CONF_DATE_OBJECT, DEFAULT_CONFIG[CONF_DATE_OBJECT])): selector.BooleanSelector(),
+            vol.Optional(CONF_TRANSLATE_DAYS, default=current.get(CONF_TRANSLATE_DAYS, DEFAULT_CONFIG[CONF_TRANSLATE_DAYS])): selector.BooleanSelector(),
+            vol.Optional(CONF_DAY_OF_WEEK, default=current.get(CONF_DAY_OF_WEEK, DEFAULT_CONFIG[CONF_DAY_OF_WEEK])): selector.BooleanSelector(),
+            vol.Optional(CONF_DAY_OF_WEEK_ONLY, default=current.get(CONF_DAY_OF_WEEK_ONLY, DEFAULT_CONFIG[CONF_DAY_OF_WEEK_ONLY])): selector.BooleanSelector(),
+            vol.Optional(CONF_ALWAYS_SHOW_DAY, default=current.get(CONF_ALWAYS_SHOW_DAY, DEFAULT_CONFIG[CONF_ALWAYS_SHOW_DAY])): selector.BooleanSelector(),
+            vol.Optional(CONF_BUILT_IN_ICONS, default=current.get(CONF_BUILT_IN_ICONS, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS])): selector.BooleanSelector(),
+            vol.Optional(CONF_BUILT_IN_ICONS_NEW, default=current.get(CONF_BUILT_IN_ICONS_NEW, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS_NEW])): selector.BooleanSelector(),
+            vol.Optional(CONF_DISABLE_ICONS, default=current.get(CONF_DISABLE_ICONS, DEFAULT_CONFIG[CONF_DISABLE_ICONS])): selector.BooleanSelector(),
+        }
+
+        return self.async_show_form(
+            step_id="custom_options",
+            data_schema=vol.Schema(schema_dict),
+            errors=errors,
         )
 
     async def async_step_address(self, user_input=None):

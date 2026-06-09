@@ -84,6 +84,70 @@
           "addressid": "Address ID for Ximmio-based collectors (if required by your waste collector)",
           "customerid": "Customer ID for Ximmio-based collectors (if required by your waste collector)"
         }
+      },
+      "custom_name": {
+        "title": "Custom Collector Name",
+        "description": "Enter a name for this custom waste collector",
+        "data": {
+          "name": "Collector Name"
+        },
+        "data_description": {
+          "name": "A descriptive name for this custom waste collector entry"
+        }
+      },
+      "custom_waste_type": {
+        "title": "Select Waste Type",
+        "description": "Choose the waste type for this custom collector",
+        "data": {
+          "customwastetype": "Waste Type"
+        },
+        "data_description": {
+          "customwastetype": "Select the type of waste this collector handles"
+        }
+      },
+      "custom_dates": {
+        "title": "Add Collection Dates",
+        "description": "Add a collection date. Dates added so far:\n{dates_added}",
+        "data": {
+          "date": "Collection Date",
+          "add_another": "Add Another Date"
+        },
+        "data_description": {
+          "date": "Select a date when this waste type will be collected",
+          "add_another": "Enable to add more dates after this one"
+        }
+      },
+      "custom_options": {
+        "title": "Display Options",
+        "description": "Configure how the custom collector sensors are displayed",
+        "data": {
+          "wastecollectornameprefix": "Use Name Prefix",
+          "dateformat": "Date Format",
+          "upcomingsensor": "Upcoming Sensors",
+          "dateonly": "Date Only",
+          "dateobject": "Date as Timestamp",
+          "dutch": "Dutch Language",
+          "dayofweek": "Show Day of Week",
+          "dayofweekonly": "Day Names Only",
+          "alwaysshowday": "Always Show Day Names",
+          "builtinicons": "Classic Icons",
+          "builtiniconsnew": "Modern Icons",
+          "disableicons": "Disable Icons"
+        },
+        "data_description": {
+          "wastecollectornameprefix": "Add waste collector name as prefix to sensor names",
+          "dateformat": "Date format for sensor values (Python strftime format)",
+          "upcomingsensor": "Create additional sensors for today, tomorrow, and next upcoming collection",
+          "dateonly": "Show only date without day names",
+          "dateobject": "Use timestamp objects instead of formatted text",
+          "dutch": "Show day and month names in Dutch instead of English",
+          "dayofweek": "Include day of week in sensor values",
+          "dayofweekonly": "Show only day names for nearby dates",
+          "alwaysshowday": "Always show day names, even for dates more than a week away",
+          "builtinicons": "Use built-in icons for waste types (classic icon set)",
+          "builtiniconsnew": "Use built-in icons for waste types (modern icon set)",
+          "disableicons": "Disable all icons for waste type sensors"
+        }
       }
     },
     "error": {
@@ -93,7 +157,9 @@
       "no_resources": "No waste types found",
       "unknown_error": "Unknown error occurred",
       "invalid_custom_mapping": "Invalid JSON format in custom mapping",
-      "already_configured": "This configuration already exists"
+      "already_configured": "This configuration already exists",
+      "name_required": "A name is required",
+      "no_dates": "At least one date must be added"
     },
     "abort": {
       "already_configured": "This waste collector configuration already exists"
@@ -184,6 +250,70 @@
           "addressid": "Address ID for Ximmio-based collectors (if required by your waste collector)",
           "customerid": "Customer ID for Ximmio-based collectors (if required by your waste collector)"
         }
+      },
+      "custom_name": {
+        "title": "Update Custom Collector Name",
+        "description": "Update the name for this custom waste collector",
+        "data": {
+          "name": "Collector Name"
+        },
+        "data_description": {
+          "name": "A descriptive name for this custom waste collector entry"
+        }
+      },
+      "custom_waste_type": {
+        "title": "Update Waste Type",
+        "description": "Change the waste type for this custom collector",
+        "data": {
+          "customwastetype": "Waste Type"
+        },
+        "data_description": {
+          "customwastetype": "Select the type of waste this collector handles"
+        }
+      },
+      "custom_dates": {
+        "title": "Update Collection Dates",
+        "description": "Add a collection date. Dates added so far:\n{dates_added}",
+        "data": {
+          "date": "Collection Date",
+          "add_another": "Add Another Date"
+        },
+        "data_description": {
+          "date": "Select a date when this waste type will be collected",
+          "add_another": "Enable to add more dates after this one"
+        }
+      },
+      "custom_options": {
+        "title": "Update Display Options",
+        "description": "Update how the custom collector sensors are displayed",
+        "data": {
+          "wastecollectornameprefix": "Use Name Prefix",
+          "dateformat": "Date Format",
+          "upcomingsensor": "Upcoming Sensors",
+          "dateonly": "Date Only",
+          "dateobject": "Date as Timestamp",
+          "dutch": "Dutch Language",
+          "dayofweek": "Show Day of Week",
+          "dayofweekonly": "Day Names Only",
+          "alwaysshowday": "Always Show Day Names",
+          "builtinicons": "Classic Icons",
+          "builtiniconsnew": "Modern Icons",
+          "disableicons": "Disable Icons"
+        },
+        "data_description": {
+          "wastecollectornameprefix": "Add waste collector name as prefix to sensor names",
+          "dateformat": "Date format for sensor values (Python strftime format)",
+          "upcomingsensor": "Create additional sensors for today, tomorrow, and next upcoming collection",
+          "dateonly": "Show only date without day names",
+          "dateobject": "Use timestamp objects instead of formatted text",
+          "dutch": "Show day and month names in Dutch instead of English",
+          "dayofweek": "Include day of week in sensor values",
+          "dayofweekonly": "Show only day names for nearby dates",
+          "alwaysshowday": "Always show day names, even for dates more than a week away",
+          "builtinicons": "Use built-in icons for waste types (classic icon set)",
+          "builtiniconsnew": "Use built-in icons for waste types (modern icon set)",
+          "disableicons": "Disable all icons for waste type sensors"
+        }
       }
     },
     "error": {
@@ -192,7 +322,9 @@
       "invalid_collector": "Invalid collector data", 
       "no_resources": "No waste types found",
       "unknown_error": "Unknown error occurred",
-      "invalid_custom_mapping": "Invalid JSON format in custom mapping"
+      "invalid_custom_mapping": "Invalid JSON format in custom mapping",
+      "name_required": "A name is required",
+      "no_dates": "At least one date must be added"
     }
   }
 }

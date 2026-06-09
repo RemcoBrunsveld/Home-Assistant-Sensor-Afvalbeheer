@@ -72,6 +72,56 @@
           "addressid": "ID d'adresse pour les collecteurs basés sur Ximmio (si requis par votre collecteur de déchets)",
           "customerid": "ID client pour les collecteurs basés sur Ximmio (si requis par votre collecteur de déchets)"
         }
+      },
+      "custom_name": {
+        "title": "Nom du Collecteur Personnalisé",
+        "description": "Entrez un nom pour ce collecteur de déchets personnalisé",
+        "data": {
+          "name": "Nom du Collecteur"
+        },
+        "data_description": {
+          "name": "Un nom descriptif pour cette entrée de collecteur personnalisé"
+        }
+      },
+      "custom_waste_type": {
+        "title": "Sélectionner le Type de Déchet",
+        "description": "Choisissez le type de déchet pour ce collecteur personnalisé",
+        "data": {
+          "customwastetype": "Type de Déchet"
+        },
+        "data_description": {
+          "customwastetype": "Sélectionnez le type de déchet que ce collecteur gère"
+        }
+      },
+      "custom_dates": {
+        "title": "Ajouter des Dates de Collecte",
+        "description": "Ajoutez une date de collecte. Dates ajoutées jusqu'à présent:\n{dates_added}",
+        "data": {
+          "date": "Date de Collecte",
+          "add_another": "Ajouter une Autre Date"
+        },
+        "data_description": {
+          "date": "Sélectionnez une date de collecte pour ce type de déchet",
+          "add_another": "Activez pour ajouter d'autres dates"
+        }
+      },
+      "custom_options": {
+        "title": "Options d'Affichage",
+        "description": "Configurez l'affichage des capteurs du collecteur personnalisé",
+        "data": {
+          "wastecollectornameprefix": "Utiliser Préfixe de Nom",
+          "dateformat": "Format de Date",
+          "upcomingsensor": "Capteurs à Venir",
+          "dateonly": "Date Uniquement",
+          "dateobject": "Date en Horodatage",
+          "dutch": "Langue Néerlandaise",
+          "dayofweek": "Afficher Jour de la Semaine",
+          "dayofweekonly": "Noms des Jours Uniquement",
+          "alwaysshowday": "Toujours Afficher les Noms des Jours",
+          "builtinicons": "Icônes Classiques",
+          "builtiniconsnew": "Icônes Modernes",
+          "disableicons": "Désactiver les Icônes"
+        }
       }
     },
     "error": {
@@ -81,7 +131,9 @@
       "no_resources": "Aucun type de déchet trouvé",
       "unknown_error": "Erreur inconnue survenue",
       "invalid_custom_mapping": "Format JSON invalide dans le mappage personnalisé",
-      "already_configured": "Cette configuration existe déjà"
+      "already_configured": "Cette configuration existe déjà",
+      "name_required": "Un nom est requis",
+      "no_dates": "Au moins une date doit être ajoutée"
     },
     "abort": {
       "already_configured": "Cette configuration de collecteur de déchets existe déjà"
@@ -160,6 +212,46 @@
           "addressid": "ID d'adresse pour les collecteurs basés sur Ximmio (si requis par votre collecteur de déchets)",
           "customerid": "ID client pour les collecteurs basés sur Ximmio (si requis par votre collecteur de déchets)"
         }
+      },
+      "custom_name": {
+        "title": "Mettre à Jour le Nom du Collecteur Personnalisé",
+        "description": "Mettre à jour le nom de ce collecteur personnalisé",
+        "data": {
+          "name": "Nom du Collecteur"
+        }
+      },
+      "custom_waste_type": {
+        "title": "Mettre à Jour le Type de Déchet",
+        "description": "Changer le type de déchet pour ce collecteur personnalisé",
+        "data": {
+          "customwastetype": "Type de Déchet"
+        }
+      },
+      "custom_dates": {
+        "title": "Mettre à Jour les Dates de Collecte",
+        "description": "Ajoutez une date de collecte. Dates ajoutées:\n{dates_added}",
+        "data": {
+          "date": "Date de Collecte",
+          "add_another": "Ajouter une Autre Date"
+        }
+      },
+      "custom_options": {
+        "title": "Mettre à Jour les Options d'Affichage",
+        "description": "Mettre à jour l'affichage des capteurs",
+        "data": {
+          "wastecollectornameprefix": "Utiliser Préfixe de Nom",
+          "dateformat": "Format de Date",
+          "upcomingsensor": "Capteurs à Venir",
+          "dateonly": "Date Uniquement",
+          "dateobject": "Date en Horodatage",
+          "dutch": "Langue Néerlandaise",
+          "dayofweek": "Afficher Jour de la Semaine",
+          "dayofweekonly": "Noms des Jours Uniquement",
+          "alwaysshowday": "Toujours Afficher les Noms des Jours",
+          "builtinicons": "Icônes Classiques",
+          "builtiniconsnew": "Icônes Modernes",
+          "disableicons": "Désactiver les Icônes"
+        }
       }
     },
     "error": {
@@ -168,7 +260,9 @@
       "invalid_collector": "Données de collecteur invalides", 
       "no_resources": "Aucun type de déchet trouvé",
       "unknown_error": "Erreur inconnue survenue",
-      "invalid_custom_mapping": "Format JSON invalide dans le mappage personnalisé"
+      "invalid_custom_mapping": "Format JSON invalide dans le mappage personnalisé",
+      "name_required": "Un nom est requis",
+      "no_dates": "Au moins une date doit être ajoutée"
     }
   }
 }
