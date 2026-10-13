@@ -8,7 +8,7 @@
 
 Afvalbeheer provides Home Assistant sensors and a calendar entity for multiple Dutch and Belgian waste collectors using REST APIs.
 
-> **⚠️ Important Notice:** YAML configuration is deprecated as of v6.0.0. All new installations and configurations should use the Home Assistant UI (Config Flow). Existing YAML configurations will automatically be imported and should be removed form configuration.yaml after migration.
+> **⚠️ Important Notice:** YAML configuration is deprecated as of v6.0.0. All new installations and configurations should use the Home Assistant UI (Config Flow). Existing YAML configurations will automatically be imported and should be removed from configuration.yaml after migration.
 
 ---
 
@@ -16,7 +16,7 @@ Afvalbeheer provides Home Assistant sensors and a calendar entity for multiple D
 
 This integration works with many waste collectors, including:
 
-ACV, Afval3xBeter, Afvalstoffendienstkalender, AfvalAlert, Alkmaar, Almere, AlphenAanDenRijn, AreaReiniging, Assen, Avalex, Avri, BAR, Berkelland, Blink, Circulus, Cleanprofs, Cranendonck, Cure (use MijnAfvalwijzer), Cyclus, DAR, DeAfvalApp, DeFryskeMarren, DenHaag, Drimmelen, GAD, Hellendoorn, HVC, Irado, Limburg.NET (requires `streetname` and `cityname`), Lingewaard, Maassluis, Meerlanden, Meppel, Middelburg-Vlissingen, MijnAfvalwijzer, Mijnafvalzaken, Montferland, Montfoort, Nijkerk, Ôffalkalinder, Omrin, Oostzaan, OudeIJsselstreek, PeelEnMaas, PreZero, Purmerend, RAD, RecycleApp (requires `streetname`), RD4, RWM, Reinis, ROVA, RMN, Saver, Schouwen-Duiveland, Sliedrecht, Spaarnelanden, SudwestFryslan, Tilburg, TwenteMilieu, Uithoorn, Venlo, Venray, Voorschoten, Waalre, Waardlanden, Westland, Woerden, ZRD, Groningen.
+ACV, Afval3xBeter, Afvalstoffendienstkalender, AfvalAlert, Alkmaar, Almere, AlphenAanDenRijn, AreaReiniging, Assen, Avalex, Avri, BAR, Berkelland, Blink, Breda, Circulus, Cleanprofs, Cranendonck, Cure (use MijnAfvalwijzer), Cyclus, DAR, DeAfvalApp, DeFryskeMarren, DenHaag, Drimmelen, FrisseKliko, GAD, Hellendoorn, HVC, Irado, Limburg.NET (requires `streetname` and `cityname`), Lingewaard, Maassluis, Meerlanden, Meppel, Middelburg-Vlissingen, MijnAfvalwijzer, Mijnafvalzaken, Montferland, Montfoort, Nijkerk, Ôffalkalinder, Omrin, Oostzaan, OudeIJsselstreek, PeelEnMaas, PreZero, Purmerend, RAD, RecycleApp (requires `streetname`), RD4, RWM, Reinis, ROVA, RMN, Saver, Schouwen-Duiveland, Sliedrecht, Spaarnelanden, SudwestFryslan, Tilburg, TwenteMilieu, Uithoorn, Venlo, Venray, Voorschoten, Waalre, Waardlanden, Westland, Woerden, ZRD, Groningen.
 
 ---
 
@@ -189,9 +189,13 @@ Select which waste types you want sensors for. At least one is required. Availab
 
 ### Icon Options
 
-- **Built-in Icons**: Use integration's built-in icons instead of collector-provided icons
-- **New Built-in Icons**: Use newer icon set (requires Built-in Icons enabled)
-- **Disable Icons**: Disable entity pictures to use custom MDI icons
+Choose one icon set in the **Icons** dropdown:
+
+- **None (Home Assistant default)**: No built-in icons; Home Assistant's default sensor icon is used, so you can set your own MDI icons
+- **Classic** / **Classic bold**: Single-color icons that follow your theme's icon color
+- **Modern** / **Modern bold** (default for new setups): Colored icons shown as entity pictures
+
+The bold variants use thicker lines. In YAML, use `builtinicons: 1` (classic) or `builtiniconsnew: 1` (modern), and add `boldicons: 1` for the bold variant.
 
 **Built-in Icons:**
 

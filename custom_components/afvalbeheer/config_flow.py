@@ -2,27 +2,33 @@ import logging
 import voluptuous as vol
 import uuid
 import json
+import requests
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.const import CONF_NAME
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 from .const import (
     DOMAIN, CONF_ID, CONF_WASTE_COLLECTOR, CONF_POSTCODE, CONF_STREET_NUMBER, CONF_SUFFIX,
     CONF_RESOURCES, CONF_NAME_PREFIX, CONF_DATE_FORMAT, CONF_UPCOMING, CONF_DATE_ONLY,
     CONF_DATE_OBJECT, CONF_BUILT_IN_ICONS, CONF_BUILT_IN_ICONS_NEW, CONF_DISABLE_ICONS,
-    CONF_TRANSLATE_DAYS, CONF_DAY_OF_WEEK, CONF_DAY_OF_WEEK_ONLY, CONF_ALWAYS_SHOW_DAY,
+    CONF_ICON_SET, CONF_BOLD_ICONS, ICON_SET_DEFAULT, ICON_SET_CLASSIC, ICON_SET_MODERN,
+    ICON_SET_CLASSIC_BOLD, ICON_SET_MODERN_BOLD,
+    CONF_TRANSLATE_DAYS, CONF_LANGUAGE, LANGUAGE_NL, LANGUAGE_EN, LANGUAGE_FR, LANGUAGE_EL, LANGUAGE_DE,
+    CONF_DAY_OF_WEEK, CONF_DAY_OF_WEEK_ONLY, CONF_ALWAYS_SHOW_DAY,
     CONF_STREET_NAME, CONF_CITY_NAME, CONF_ADDRESS_ID, CONF_CUSTOMER_ID, CONF_UPDATE_INTERVAL,
     CONF_CUSTOM_MAPPING, DEFAULT_CONFIG, XIMMIO_COLLECTOR_IDS, CONF_EMAIL, CONF_PASSWORD,
     CONF_CUSTOM_DATES, CONF_CUSTOM_WASTE_TYPE, PREDEFINED_WASTE_TYPES
 )
+from .collectors.individual.custom import normalize_custom_dates
 
 _LOGGER = logging.getLogger(__name__)
 
 WASTE_COLLECTORS = [
     "ACV", "Afval3xBeter", "Afvalstoffendienstkalender", "AfvalAlert",
     "Almere", "AlphenAanDenRijn", "Amsterdam", "AreaReiniging", "Assen", "Avalex", "Avri", "BAR",
-    "Berkelland", "Blink", "Circulus", "Cleanprofs", "Cranendonck", "Custom",
-    "Cyclus", "DAR", "DeAfvalApp", "DeFryskeMarren", "DenHaag", "Drimmelen", "GAD",
+    "Berkelland", "Blink", "Breda", "Circulus", "Cleanprofs", "Cranendonck", "Custom",
+    "Cyclus", "DAR", "DeAfvalApp", "DeFryskeMarren", "Demo", "DenHaag", "Drimmelen", "FrisseKliko", "GAD",
     "Groningen", "Hellendoorn", "HVC", "Irado", "Limburg.NET", "Lingewaard", "Maassluis", "Meerlanden",
     "Middelburg-Vlissingen", "MijnAfvalwijzer", "Mijnafvalzaken", "Montferland",
     "Montfoort", "Nijkerk", "Offalkalinder", "Omrin", "Oostzaan", "OudeIJsselstreek", "PeelEnMaas", "PreZero",
@@ -32,17 +38,393 @@ WASTE_COLLECTORS = [
     "Woerden", "ZRD"
 ]
 
+LANGUAGE_OPTIONS = [
+    {"value": LANGUAGE_NL, "label": "Nederlands"},
+    {"value": LANGUAGE_EN, "label": "English"},
+    {"value": LANGUAGE_FR, "label": "Français"},
+    {"value": LANGUAGE_EL, "label": "Ελληνικά"},
+    {"value": LANGUAGE_DE, "label": "Deutsch"},
+]
 
-class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    
-    VERSION = 3  # Increment this when config structure changes  
-    MINOR_VERSION = 1
-    
+
+def _default_language(config):
+    language = config.get(CONF_LANGUAGE)
+    if language:
+        return language
+
+    return LANGUAGE_NL if config.get(CONF_TRANSLATE_DAYS, DEFAULT_CONFIG[CONF_TRANSLATE_DAYS]) else LANGUAGE_EN
+
+
+def _icon_set_from_config(config):
+    """
+    Return the icon set selection for the stored icon options.
+
+    Args:
+        config: Config entry data and options.
+
+    Returns:
+        One of the ICON_SET_* values.
+    """
+    bold = config.get(CONF_BOLD_ICONS)
+    if config.get(CONF_DISABLE_ICONS):
+        return ICON_SET_DEFAULT
+    if config.get(CONF_BUILT_IN_ICONS_NEW):
+        return ICON_SET_MODERN_BOLD if bold else ICON_SET_MODERN
+    if config.get(CONF_BUILT_IN_ICONS):
+        return ICON_SET_CLASSIC_BOLD if bold else ICON_SET_CLASSIC
+    return ICON_SET_DEFAULT
+
+
+def _apply_icon_set(data):
+    """Replace the icon set selection with the icon options used by the sensors."""
+    icon_set = data.pop(CONF_ICON_SET, None)
+    if icon_set is None:
+        return
+    data[CONF_BUILT_IN_ICONS] = icon_set in (ICON_SET_CLASSIC, ICON_SET_CLASSIC_BOLD)
+    data[CONF_BUILT_IN_ICONS_NEW] = icon_set in (ICON_SET_MODERN, ICON_SET_MODERN_BOLD)
+    data[CONF_BOLD_ICONS] = icon_set in (ICON_SET_CLASSIC_BOLD, ICON_SET_MODERN_BOLD)
+    data[CONF_DISABLE_ICONS] = False
+
+
+def _icon_set_selector():
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=[ICON_SET_DEFAULT, ICON_SET_CLASSIC, ICON_SET_CLASSIC_BOLD, ICON_SET_MODERN, ICON_SET_MODERN_BOLD],
+            mode=selector.SelectSelectorMode.DROPDOWN,
+            translation_key=CONF_ICON_SET,
+        )
+    )
+
+
+def _build_resources_schema(available_resources, defaults, is_ximmio_collector, include_name_fields):
+    """
+    Build the data schema for the "resources" step, shared between the setup
+    flow (AfvalbeheerConfigFlow) and the options flow (AfvalbeheerOptionsFlowHandler).
+
+    Args:
+        available_resources: Waste types offered by the collector, used as select options.
+        defaults: Resolved default value for every field the schema may contain.
+        is_ximmio_collector: Whether to include the Ximmio-specific address/customer fields.
+        include_name_fields: Whether to include CONF_NAME/CONF_NAME_PREFIX (setup flow only;
+            these cannot be changed once the entry exists).
+
+    Returns:
+        A dict suitable for vol.Schema().
+    """
+    schema_dict = {
+        vol.Required(CONF_RESOURCES, default=defaults[CONF_RESOURCES]): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=available_resources,
+                multiple=True,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        ),
+    }
+    if include_name_fields:
+        schema_dict[vol.Optional(CONF_NAME, default=defaults[CONF_NAME])] = selector.TextSelector(
+            selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+        )
+        schema_dict[vol.Optional(CONF_NAME_PREFIX, default=defaults[CONF_NAME_PREFIX])] = selector.BooleanSelector()
+
+    schema_dict.update(_build_display_schema(defaults))
+
+    # Advanced settings
+    schema_dict.update({
+        vol.Optional(CONF_UPDATE_INTERVAL, default=defaults[CONF_UPDATE_INTERVAL]): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=168,  # Max 1 week in hours
+                step=1,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="hours"
+            )
+        ),
+    })
+
+    # Add Ximmio-specific fields conditionally
+    if is_ximmio_collector:
+        schema_dict.update({
+            vol.Optional(CONF_ADDRESS_ID, default=defaults[CONF_ADDRESS_ID]): selector.TextSelector(),
+            vol.Optional(CONF_CUSTOMER_ID, default=defaults[CONF_CUSTOMER_ID]): selector.TextSelector(),
+        })
+
+    return schema_dict
+
+
+def _build_display_schema(defaults):
+    """
+    Build the date/time and icon fields that control how the sensors are displayed.
+
+    Shared by the "resources" step and the "custom_options" step.
+    """
+    schema_dict = {}
+
+    # Date and time settings
+    schema_dict.update({
+        vol.Optional(CONF_DATE_FORMAT, default=defaults[CONF_DATE_FORMAT]): selector.TextSelector(),
+        vol.Optional(CONF_UPCOMING, default=defaults[CONF_UPCOMING]): selector.BooleanSelector(),
+        vol.Optional(CONF_DATE_ONLY, default=defaults[CONF_DATE_ONLY]): selector.BooleanSelector(),
+        vol.Optional(CONF_DATE_OBJECT, default=defaults[CONF_DATE_OBJECT]): selector.BooleanSelector(),
+        vol.Optional(CONF_LANGUAGE, default=defaults[CONF_LANGUAGE]): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=LANGUAGE_OPTIONS,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Optional(CONF_DAY_OF_WEEK, default=defaults[CONF_DAY_OF_WEEK]): selector.BooleanSelector(),
+        vol.Optional(CONF_DAY_OF_WEEK_ONLY, default=defaults[CONF_DAY_OF_WEEK_ONLY]): selector.BooleanSelector(),
+        vol.Optional(CONF_ALWAYS_SHOW_DAY, default=defaults[CONF_ALWAYS_SHOW_DAY]): selector.BooleanSelector(),
+    })
+
+    # Icon settings
+    schema_dict.update({
+        vol.Optional(CONF_ICON_SET, default=defaults[CONF_ICON_SET]): _icon_set_selector(),
+    })
+
+    return schema_dict
+
+
+CUSTOM_COLLECTOR = "Custom"
+# Form field for adding one collection date; the selected dates are stored under CONF_CUSTOM_DATES
+CUSTOM_DATE_FIELD = "date"
+# Display options of the "custom_options" step that map 1:1 onto DEFAULT_CONFIG
+CUSTOM_DISPLAY_OPTION_KEYS = (
+    CONF_NAME_PREFIX, CONF_DATE_FORMAT, CONF_UPCOMING, CONF_DATE_ONLY, CONF_DATE_OBJECT,
+    CONF_DAY_OF_WEEK, CONF_DAY_OF_WEEK_ONLY, CONF_ALWAYS_SHOW_DAY,
+)
+
+
+def _is_custom_collector(collector):
+    return str(collector or "").lower() == CUSTOM_COLLECTOR.lower()
+
+
+def _custom_entry_title(name, waste_type):
+    return f"{CUSTOM_COLLECTOR} - {name} ({waste_type})"
+
+
+def _custom_options_defaults(current):
+    """
+    Resolve the defaults for the "custom_options" step.
+
+    Args:
+        current: Current entry config, or an empty dict for a new entry.
+    """
+    defaults = {key: current.get(key, DEFAULT_CONFIG[key]) for key in CUSTOM_DISPLAY_OPTION_KEYS}
+    # New setups get the same language and icon defaults as the "resources" step
+    defaults[CONF_LANGUAGE] = _default_language(current) if current else DEFAULT_CONFIG[CONF_LANGUAGE]
+    defaults[CONF_ICON_SET] = _icon_set_from_config(current) if current else ICON_SET_MODERN
+    return defaults
+
+
+def _build_custom_schema(defaults, include_name):
+    """Build the schema for the "custom" step: the entry name and its waste type."""
+    schema_dict = {}
+    if include_name:
+        schema_dict[vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, ""))] = selector.TextSelector(
+            selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+        )
+    waste_type = defaults.get(CONF_CUSTOM_WASTE_TYPE)
+    waste_type_key = (
+        vol.Required(CONF_CUSTOM_WASTE_TYPE, default=waste_type) if waste_type else vol.Required(CONF_CUSTOM_WASTE_TYPE)
+    )
+    schema_dict[waste_type_key] = selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=PREDEFINED_WASTE_TYPES,
+            mode=selector.SelectSelectorMode.DROPDOWN,
+        )
+    )
+    return schema_dict
+
+
+def _build_custom_dates_schema(dates):
+    """
+    Build the schema for the "custom_dates" step.
+
+    The dates added so far are shown as checked boxes, so unchecking one removes it.
+    """
+    schema_dict = {}
+    if dates:
+        schema_dict[vol.Optional(CONF_CUSTOM_DATES, default=list(dates))] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=list(dates),
+                multiple=True,
+                mode=selector.SelectSelectorMode.LIST,
+            )
+        )
+    schema_dict[vol.Optional(CUSTOM_DATE_FIELD)] = selector.DateSelector()
+    return schema_dict
+
+
+class _CustomCollectorSteps:
+    """
+    Steps for the Custom collector, shared by the setup flow and the options flow.
+
+    The flow class provides _custom_current() (the current entry config, empty for a
+    new entry) and _async_finish_custom(data) (create the entry or store the options).
+    """
+
+    def _custom_current(self):
+        return {}
+
+    def _custom_name_editable(self):
+        # CONF_NAME/CONF_NAME_PREFIX are part of the sensor unique_ids, so they are fixed
+        # once a Custom entry exists (same rule as the "resources" options step).
+        current = self._custom_current()
+        return not (_is_custom_collector(current.get(CONF_WASTE_COLLECTOR)) and current.get(CONF_NAME))
+
+    async def async_step_custom(self, user_input=None):
+        """Step to enter the entry name and select the waste type."""
+        errors = {}
+        current = self._custom_current()
+        include_name = self._custom_name_editable()
+
+        if user_input is not None:
+            name = user_input.get(CONF_NAME, current.get(CONF_NAME, "")).strip()
+            if not name:
+                errors["base"] = "name_required"
+            else:
+                self._custom_name = name
+                self._custom_waste_type = user_input[CONF_CUSTOM_WASTE_TYPE]
+                self._custom_dates = normalize_custom_dates(current.get(CONF_CUSTOM_DATES))
+                return await self.async_step_custom_dates()
+
+        return self.async_show_form(
+            step_id="custom",
+            data_schema=vol.Schema(_build_custom_schema({**current, **(user_input or {})}, include_name)),
+            errors=errors,
+        )
+
+    async def async_step_custom_dates(self, user_input=None):
+        """Step to add collection dates one at a time and remove existing ones."""
+        errors = {}
+        if user_input is not None:
+            kept = user_input.get(CONF_CUSTOM_DATES, []) if self._custom_dates else []
+            new_date = user_input.get(CUSTOM_DATE_FIELD)
+            self._custom_dates = normalize_custom_dates([*kept, *([new_date] if new_date else [])])
+            # Submitting without a new date means the user is done adding dates
+            if not new_date:
+                if self._custom_dates:
+                    return await self.async_step_custom_options()
+                errors["base"] = "no_dates"
+
+        return self.async_show_form(
+            step_id="custom_dates",
+            data_schema=vol.Schema(_build_custom_dates_schema(self._custom_dates)),
+            errors=errors,
+        )
+
+    async def async_step_custom_options(self, user_input=None):
+        """Step to configure how the custom collector's sensors are displayed."""
+        include_name_prefix = self._custom_name_editable()
+
+        if user_input is not None:
+            data = {
+                **user_input,
+                CONF_WASTE_COLLECTOR: CUSTOM_COLLECTOR,
+                CONF_NAME: self._custom_name,
+                CONF_CUSTOM_WASTE_TYPE: self._custom_waste_type,
+                CONF_CUSTOM_DATES: self._custom_dates,
+                CONF_RESOURCES: [self._custom_waste_type],
+                CONF_CUSTOM_MAPPING: {},
+                CONF_POSTCODE: "",
+                CONF_STREET_NUMBER: "",
+                CONF_SUFFIX: "",
+            }
+            _apply_icon_set(data)
+            return await self._async_finish_custom(data)
+
+        defaults = _custom_options_defaults(self._custom_current())
+        schema_dict = {}
+        if include_name_prefix:
+            schema_dict[vol.Optional(CONF_NAME_PREFIX, default=defaults[CONF_NAME_PREFIX])] = selector.BooleanSelector()
+        schema_dict.update(_build_display_schema(defaults))
+
+        return self.async_show_form(
+            step_id="custom_options",
+            data_schema=vol.Schema(schema_dict),
+        )
+
+
+# Maps the error keys returned by _async_get_available_resources to the
+# translation keys shown on the "resources" form. Shared between both flows.
+RESOURCES_ERROR_MAP = {
+    "import_failed": "import_error",
+    "no_data": "connection_error",
+    "invalid_data": "invalid_collector",
+    "no_resources": "no_resources",
+    "api_error": "connection_error",
+}
+
+
+async def _async_get_available_resources(hass, address, custom_mapping=None):
+    """
+    Fetch the available waste types for an address from the selected collector.
+
+    Shared between AfvalbeheerConfigFlow and AfvalbeheerOptionsFlowHandler so both
+    flows use the exact same lookup/error-mapping logic.
+    """
+    try:
+        from .API import get_wastedata_from_config
+    except ImportError as e:
+        _LOGGER.error("Failed to import API module: %s", e)
+        return {"error": "import_failed", "resources": []}
+
+    config = {
+        CONF_WASTE_COLLECTOR: address[CONF_WASTE_COLLECTOR],
+        CONF_POSTCODE: address[CONF_POSTCODE],
+        CONF_STREET_NUMBER: address[CONF_STREET_NUMBER],
+        CONF_SUFFIX: address.get(CONF_SUFFIX, ""),
+        CONF_RESOURCES: ["restafval"],
+        CONF_CUSTOM_MAPPING: custom_mapping or {},
+    }
+    collector_lower = address[CONF_WASTE_COLLECTOR].lower()
+    if collector_lower == "limburg.net":
+        config[CONF_CITY_NAME] = address.get(CONF_CITY_NAME, "")
+    if collector_lower in ["limburg.net", "recycleapp"]:
+        config[CONF_STREET_NAME] = address.get(CONF_STREET_NAME, "")
+
+    try:
+        data = await hass.async_add_executor_job(get_wastedata_from_config, hass, config)
+        if not data:
+            _LOGGER.warning("No data returned from waste collector API for %s", address[CONF_WASTE_COLLECTOR])
+            return {"error": "no_data", "resources": []}
+        if not hasattr(data, "collections"):
+            _LOGGER.warning("Data object missing collections attribute for %s", address[CONF_WASTE_COLLECTOR])
+            return {"error": "invalid_data", "resources": []}
+
+        await data.collector.update()
+        resources = data.collections.get_available_waste_types()
+        if not resources:
+            _LOGGER.warning("No waste types found for %s at %s %s",
+                          address[CONF_WASTE_COLLECTOR], address[CONF_POSTCODE], address[CONF_STREET_NUMBER])
+            return {"error": "no_resources", "resources": []}
+
+        # Apply custom mapping to resources if provided
+        if custom_mapping:
+            mapped_resources = []
+            for resource in resources:
+                # If there's a mapping for this resource, use the mapped name
+                mapped_name = custom_mapping.get(resource, resource)
+                mapped_resources.append(mapped_name)
+            resources = mapped_resources
+
+        _LOGGER.debug("Found %d waste types for %s: %s", len(resources), address[CONF_WASTE_COLLECTOR], resources)
+        return {"error": None, "resources": resources}
+
+    except (requests.exceptions.RequestException, KeyError, ValueError, TypeError, AttributeError) as e:
+        _LOGGER.error("Error fetching waste types for %s: %s", address[CONF_WASTE_COLLECTOR], e)
+        return {"error": "api_error", "resources": []}
+
+
+class AfvalbeheerConfigFlow(_CustomCollectorSteps, config_entries.ConfigFlow, domain=DOMAIN):
+
+    VERSION = 3  # Increment this when config structure changes
+    MINOR_VERSION = 2
+
     def __init__(self):
         super().__init__()
         self._custom_mapping = {}
         self._omrin_credentials = {}
-        self._custom_dates = []
     
 
     async def async_step_import(self, import_config):
@@ -65,7 +447,11 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             existing_config = {**entry.data, **entry.options}
             if (existing_config.get(CONF_WASTE_COLLECTOR) == import_config.get(CONF_WASTE_COLLECTOR) and
                 existing_config.get(CONF_POSTCODE) == import_config.get(CONF_POSTCODE) and
-                existing_config.get(CONF_STREET_NUMBER) == import_config.get(CONF_STREET_NUMBER)):
+                existing_config.get(CONF_STREET_NUMBER) == import_config.get(CONF_STREET_NUMBER) and
+                # Custom entries have no address; they are told apart by name and waste type
+                (not _is_custom_collector(import_config.get(CONF_WASTE_COLLECTOR)) or (
+                    existing_config.get(CONF_NAME) == import_config.get(CONF_NAME) and
+                    existing_config.get(CONF_CUSTOM_WASTE_TYPE) == import_config.get(CONF_CUSTOM_WASTE_TYPE)))):
                 _LOGGER.info("Configuration already exists for %s at %s %s, skipping import", 
                            import_config.get(CONF_WASTE_COLLECTOR),
                            import_config.get(CONF_POSTCODE),
@@ -91,12 +477,16 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_SUFFIX: import_config.get(CONF_SUFFIX, ""),
                 CONF_CITY_NAME: import_config.get(CONF_CITY_NAME, ""),
                 CONF_STREET_NAME: import_config.get(CONF_STREET_NAME, ""),
+                CONF_CUSTOM_WASTE_TYPE: import_config.get(CONF_CUSTOM_WASTE_TYPE),
+                CONF_CUSTOM_DATES: import_config.get(CONF_CUSTOM_DATES),
                 CONF_RESOURCES: ["restafval"],  # Dummy resource for API call
             }
             
             from .API import get_wastedata_from_config
             data = get_wastedata_from_config(self.hass, temp_config)
             if data and hasattr(data, 'collections'):
+                # Fetch collector data once (no scheduling) before reading resources
+                await data.collector.update()
                 # Get available resources from API
                 available_resources = data.collections.get_available_waste_types()
                 if available_resources:
@@ -119,7 +509,7 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     config_data[CONF_RESOURCES] = yaml_resources
             else:
                 config_data[CONF_RESOURCES] = yaml_resources
-        except Exception as e:
+        except (requests.exceptions.RequestException, KeyError, ValueError, TypeError, AttributeError) as e:
             _LOGGER.warning("Could not fetch resources for case matching during import: %s", e)
             config_data[CONF_RESOURCES] = yaml_resources
         
@@ -136,7 +526,9 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_data[CONF_BUILT_IN_ICONS] = import_config.get(CONF_BUILT_IN_ICONS, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS])
         config_data[CONF_BUILT_IN_ICONS_NEW] = import_config.get(CONF_BUILT_IN_ICONS_NEW, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS_NEW])
         config_data[CONF_DISABLE_ICONS] = import_config.get(CONF_DISABLE_ICONS, DEFAULT_CONFIG[CONF_DISABLE_ICONS])
+        config_data[CONF_BOLD_ICONS] = import_config.get(CONF_BOLD_ICONS, DEFAULT_CONFIG[CONF_BOLD_ICONS])
         config_data[CONF_TRANSLATE_DAYS] = import_config.get(CONF_TRANSLATE_DAYS, DEFAULT_CONFIG[CONF_TRANSLATE_DAYS])
+        config_data[CONF_LANGUAGE] = import_config.get(CONF_LANGUAGE, _default_language(config_data))
         config_data[CONF_DAY_OF_WEEK] = import_config.get(CONF_DAY_OF_WEEK, DEFAULT_CONFIG[CONF_DAY_OF_WEEK])
         config_data[CONF_DAY_OF_WEEK_ONLY] = import_config.get(CONF_DAY_OF_WEEK_ONLY, DEFAULT_CONFIG[CONF_DAY_OF_WEEK_ONLY])
         config_data[CONF_ALWAYS_SHOW_DAY] = import_config.get(CONF_ALWAYS_SHOW_DAY, DEFAULT_CONFIG[CONF_ALWAYS_SHOW_DAY])
@@ -146,6 +538,13 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_data[CONF_CUSTOMER_ID] = import_config.get(CONF_CUSTOMER_ID, DEFAULT_CONFIG[CONF_CUSTOMER_ID])
         config_data[CONF_UPDATE_INTERVAL] = import_config.get(CONF_UPDATE_INTERVAL, DEFAULT_CONFIG[CONF_UPDATE_INTERVAL])
         config_data[CONF_CUSTOM_MAPPING] = import_config.get(CONF_CUSTOM_MAPPING, DEFAULT_CONFIG[CONF_CUSTOM_MAPPING])
+
+        if _is_custom_collector(import_config[CONF_WASTE_COLLECTOR]):
+            waste_type = import_config.get(CONF_CUSTOM_WASTE_TYPE)
+            config_data[CONF_CUSTOM_WASTE_TYPE] = waste_type
+            config_data[CONF_CUSTOM_DATES] = normalize_custom_dates(import_config.get(CONF_CUSTOM_DATES))
+            if not config_data[CONF_RESOURCES] and waste_type:
+                config_data[CONF_RESOURCES] = [waste_type]
         
         # Generate unique ID for this configuration entry
         config_data[CONF_ID] = str(uuid.uuid4())
@@ -196,7 +595,7 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.info("Removing YAML entity: %s", entity_id)
                 entity_registry.async_remove(entity_id)
                 removed_count += 1
-            except Exception as e:
+            except KeyError as e:
                 _LOGGER.error("Failed to remove YAML entity %s: %s", entity_id, e)
         
         # Force registry save to ensure entities are fully removed
@@ -208,7 +607,7 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Small delay to ensure registry is updated
                 import asyncio
                 await asyncio.sleep(0.1)
-            except Exception as e:
+            except HomeAssistantError as e:
                 _LOGGER.warning("Could not force registry update: %s", e)
         
         _LOGGER.info("YAML cleanup completed. Removed %d entities", removed_count)
@@ -217,8 +616,8 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             self._collector = user_input[CONF_WASTE_COLLECTOR]
-            if self._collector == "Custom":
-                return await self.async_step_custom_name()
+            if _is_custom_collector(self._collector):
+                return await self.async_step_custom()
             return await self.async_step_address()
         return self.async_show_form(
             step_id="user",
@@ -228,133 +627,11 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_custom_name(self, user_input=None):
-        """Step to enter a custom name for the custom collector."""
-        errors = {}
-        if user_input is not None:
-            self._custom_name = user_input.get(CONF_NAME, "")
-            if not self._custom_name.strip():
-                errors["base"] = "name_required"
-            else:
-                return await self.async_step_custom_waste_type()
-
-        return self.async_show_form(
-            step_id="custom_name",
-            data_schema=vol.Schema({
-                vol.Required(CONF_NAME): selector.TextSelector(
-                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
-                ),
-            }),
-            errors=errors,
-        )
-
-    async def async_step_custom_waste_type(self, user_input=None):
-        """Step to select a waste type from predefined list."""
-        errors = {}
-        if user_input is not None:
-            self._custom_waste_type = user_input[CONF_CUSTOM_WASTE_TYPE]
-            self._custom_dates = []
-            return await self.async_step_custom_dates()
-
-        return self.async_show_form(
-            step_id="custom_waste_type",
-            data_schema=vol.Schema({
-                vol.Required(CONF_CUSTOM_WASTE_TYPE): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=PREDEFINED_WASTE_TYPES,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-            }),
-            errors=errors,
-        )
-
-    async def async_step_custom_dates(self, user_input=None):
-        """Step to add collection dates one at a time."""
-        errors = {}
-        if user_input is not None:
-            date_value = user_input.get("date")
-            add_another = user_input.get("add_another", False)
-
-            if date_value:
-                self._custom_dates.append(date_value)
-
-            if add_another:
-                return await self.async_step_custom_dates()
-            else:
-                if not self._custom_dates:
-                    errors["base"] = "no_dates"
-                else:
-                    return await self.async_step_custom_options()
-
-        dates_description = ""
-        if self._custom_dates:
-            dates_description = "\n".join(
-                f"• {d}" for d in sorted(self._custom_dates)
-            )
-
-        return self.async_show_form(
-            step_id="custom_dates",
-            data_schema=vol.Schema({
-                vol.Required("date"): selector.DateSelector(),
-                vol.Optional("add_another", default=True): selector.BooleanSelector(),
-            }),
-            errors=errors,
-            description_placeholders={"dates_added": dates_description or "None yet"},
-        )
-
-    async def async_step_custom_options(self, user_input=None):
-        """Step to configure display options for the custom collector."""
-        errors = {}
-        if user_input is not None:
-            data = {
-                CONF_WASTE_COLLECTOR: "Custom",
-                CONF_NAME: self._custom_name,
-                CONF_CUSTOM_WASTE_TYPE: self._custom_waste_type,
-                CONF_CUSTOM_DATES: sorted(self._custom_dates),
-                CONF_RESOURCES: [self._custom_waste_type],
-                CONF_NAME_PREFIX: user_input.get(CONF_NAME_PREFIX, DEFAULT_CONFIG[CONF_NAME_PREFIX]),
-                CONF_DATE_FORMAT: user_input.get(CONF_DATE_FORMAT, DEFAULT_CONFIG[CONF_DATE_FORMAT]),
-                CONF_UPCOMING: user_input.get(CONF_UPCOMING, DEFAULT_CONFIG[CONF_UPCOMING]),
-                CONF_DATE_ONLY: user_input.get(CONF_DATE_ONLY, DEFAULT_CONFIG[CONF_DATE_ONLY]),
-                CONF_DATE_OBJECT: user_input.get(CONF_DATE_OBJECT, DEFAULT_CONFIG[CONF_DATE_OBJECT]),
-                CONF_TRANSLATE_DAYS: user_input.get(CONF_TRANSLATE_DAYS, DEFAULT_CONFIG[CONF_TRANSLATE_DAYS]),
-                CONF_DAY_OF_WEEK: user_input.get(CONF_DAY_OF_WEEK, DEFAULT_CONFIG[CONF_DAY_OF_WEEK]),
-                CONF_DAY_OF_WEEK_ONLY: user_input.get(CONF_DAY_OF_WEEK_ONLY, DEFAULT_CONFIG[CONF_DAY_OF_WEEK_ONLY]),
-                CONF_ALWAYS_SHOW_DAY: user_input.get(CONF_ALWAYS_SHOW_DAY, DEFAULT_CONFIG[CONF_ALWAYS_SHOW_DAY]),
-                CONF_BUILT_IN_ICONS: user_input.get(CONF_BUILT_IN_ICONS, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS]),
-                CONF_BUILT_IN_ICONS_NEW: user_input.get(CONF_BUILT_IN_ICONS_NEW, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS_NEW]),
-                CONF_DISABLE_ICONS: user_input.get(CONF_DISABLE_ICONS, DEFAULT_CONFIG[CONF_DISABLE_ICONS]),
-                CONF_CUSTOM_MAPPING: {},
-                CONF_POSTCODE: "",
-                CONF_STREET_NUMBER: "",
-                CONF_SUFFIX: "",
-                CONF_ID: str(uuid.uuid4()),
-            }
-            return self.async_create_entry(
-                title=f"Custom - {self._custom_name} ({self._custom_waste_type})",
-                data=data,
-            )
-
-        schema_dict = {
-            vol.Optional(CONF_NAME_PREFIX, default=DEFAULT_CONFIG[CONF_NAME_PREFIX]): selector.BooleanSelector(),
-            vol.Optional(CONF_DATE_FORMAT, default=DEFAULT_CONFIG[CONF_DATE_FORMAT]): selector.TextSelector(),
-            vol.Optional(CONF_UPCOMING, default=DEFAULT_CONFIG[CONF_UPCOMING]): selector.BooleanSelector(),
-            vol.Optional(CONF_DATE_ONLY, default=DEFAULT_CONFIG[CONF_DATE_ONLY]): selector.BooleanSelector(),
-            vol.Optional(CONF_DATE_OBJECT, default=DEFAULT_CONFIG[CONF_DATE_OBJECT]): selector.BooleanSelector(),
-            vol.Optional(CONF_TRANSLATE_DAYS, default=DEFAULT_CONFIG[CONF_TRANSLATE_DAYS]): selector.BooleanSelector(),
-            vol.Optional(CONF_DAY_OF_WEEK, default=DEFAULT_CONFIG[CONF_DAY_OF_WEEK]): selector.BooleanSelector(),
-            vol.Optional(CONF_DAY_OF_WEEK_ONLY, default=DEFAULT_CONFIG[CONF_DAY_OF_WEEK_ONLY]): selector.BooleanSelector(),
-            vol.Optional(CONF_ALWAYS_SHOW_DAY, default=DEFAULT_CONFIG[CONF_ALWAYS_SHOW_DAY]): selector.BooleanSelector(),
-            vol.Optional(CONF_BUILT_IN_ICONS, default=DEFAULT_CONFIG[CONF_BUILT_IN_ICONS]): selector.BooleanSelector(),
-            vol.Optional(CONF_BUILT_IN_ICONS_NEW, default=DEFAULT_CONFIG[CONF_BUILT_IN_ICONS_NEW]): selector.BooleanSelector(),
-            vol.Optional(CONF_DISABLE_ICONS, default=DEFAULT_CONFIG[CONF_DISABLE_ICONS]): selector.BooleanSelector(),
-        }
-
-        return self.async_show_form(
-            step_id="custom_options",
-            data_schema=vol.Schema(schema_dict),
-            errors=errors,
+    async def _async_finish_custom(self, data):
+        data[CONF_ID] = str(uuid.uuid4())
+        return self.async_create_entry(
+            title=_custom_entry_title(data[CONF_NAME], data[CONF_CUSTOM_WASTE_TYPE]),
+            data=data,
         )
 
     async def async_step_address(self, user_input=None):
@@ -485,17 +762,10 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Get custom mapping if it was set in previous step
         custom_mapping = getattr(self, '_custom_mapping', {})
         
-        result = await self._async_get_available_resources(address, custom_mapping)
+        result = await _async_get_available_resources(self.hass, address, custom_mapping)
         
         if result["error"]:
-            error_map = {
-                "import_failed": "import_error",
-                "no_data": "connection_error", 
-                "invalid_data": "invalid_collector",
-                "no_resources": "no_resources",
-                "api_error": "connection_error"
-            }
-            errors["base"] = error_map.get(result["error"], "unknown_error")
+            errors["base"] = RESOURCES_ERROR_MAP.get(result["error"], "unknown_error")
         
         available_resources = result["resources"]
         collector_lower = address[CONF_WASTE_COLLECTOR].lower()
@@ -504,6 +774,7 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             if not errors:
                 data = {**self._address_input, **user_input}
+                _apply_icon_set(data)
                 # Add custom mapping to data
                 data[CONF_CUSTOM_MAPPING] = custom_mapping
                 # Add Omrin credentials if provided
@@ -518,119 +789,32 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
         
         # Build schema with conditional fields
-        schema_dict = {
-            vol.Required(CONF_RESOURCES, default=available_resources): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=available_resources,
-                    multiple=True,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            ),
-            vol.Optional(CONF_NAME, default=DEFAULT_CONFIG[CONF_NAME]): selector.TextSelector(
-                selector.TextSelectorConfig(
-                    type=selector.TextSelectorType.TEXT
-                )
-            ),
-            vol.Optional(CONF_NAME_PREFIX, default=DEFAULT_CONFIG[CONF_NAME_PREFIX]): selector.BooleanSelector(),
+        defaults = {
+            CONF_RESOURCES: available_resources,
+            CONF_NAME: DEFAULT_CONFIG[CONF_NAME],
+            CONF_NAME_PREFIX: DEFAULT_CONFIG[CONF_NAME_PREFIX],
+            CONF_DATE_FORMAT: DEFAULT_CONFIG[CONF_DATE_FORMAT],
+            CONF_UPCOMING: DEFAULT_CONFIG[CONF_UPCOMING],
+            CONF_DATE_ONLY: DEFAULT_CONFIG[CONF_DATE_ONLY],
+            CONF_DATE_OBJECT: DEFAULT_CONFIG[CONF_DATE_OBJECT],
+            CONF_LANGUAGE: DEFAULT_CONFIG[CONF_LANGUAGE],
+            CONF_DAY_OF_WEEK: DEFAULT_CONFIG[CONF_DAY_OF_WEEK],
+            CONF_DAY_OF_WEEK_ONLY: DEFAULT_CONFIG[CONF_DAY_OF_WEEK_ONLY],
+            CONF_ALWAYS_SHOW_DAY: DEFAULT_CONFIG[CONF_ALWAYS_SHOW_DAY],
+            CONF_ICON_SET: ICON_SET_MODERN,
+            CONF_UPDATE_INTERVAL: DEFAULT_CONFIG[CONF_UPDATE_INTERVAL],
+            CONF_ADDRESS_ID: DEFAULT_CONFIG[CONF_ADDRESS_ID],
+            CONF_CUSTOMER_ID: DEFAULT_CONFIG[CONF_CUSTOMER_ID],
         }
-        
-        # Date and time settings
-        schema_dict.update({
-            vol.Optional(CONF_DATE_FORMAT, default=DEFAULT_CONFIG[CONF_DATE_FORMAT]): selector.TextSelector(),
-            vol.Optional(CONF_UPCOMING, default=DEFAULT_CONFIG[CONF_UPCOMING]): selector.BooleanSelector(),
-            vol.Optional(CONF_DATE_ONLY, default=DEFAULT_CONFIG[CONF_DATE_ONLY]): selector.BooleanSelector(),
-            vol.Optional(CONF_DATE_OBJECT, default=DEFAULT_CONFIG[CONF_DATE_OBJECT]): selector.BooleanSelector(),
-            vol.Optional(CONF_TRANSLATE_DAYS, default=DEFAULT_CONFIG[CONF_TRANSLATE_DAYS]): selector.BooleanSelector(),
-            vol.Optional(CONF_DAY_OF_WEEK, default=DEFAULT_CONFIG[CONF_DAY_OF_WEEK]): selector.BooleanSelector(),
-            vol.Optional(CONF_DAY_OF_WEEK_ONLY, default=DEFAULT_CONFIG[CONF_DAY_OF_WEEK_ONLY]): selector.BooleanSelector(),
-            vol.Optional(CONF_ALWAYS_SHOW_DAY, default=DEFAULT_CONFIG[CONF_ALWAYS_SHOW_DAY]): selector.BooleanSelector(),
-        })
-        
-        # Icon settings
-        schema_dict.update({
-            vol.Optional(CONF_BUILT_IN_ICONS, default=DEFAULT_CONFIG[CONF_BUILT_IN_ICONS]): selector.BooleanSelector(),
-            vol.Optional(CONF_BUILT_IN_ICONS_NEW, default=DEFAULT_CONFIG[CONF_BUILT_IN_ICONS_NEW]): selector.BooleanSelector(),
-            vol.Optional(CONF_DISABLE_ICONS, default=DEFAULT_CONFIG[CONF_DISABLE_ICONS]): selector.BooleanSelector(),
-        })
-        
-        # Advanced settings
-        schema_dict.update({
-            vol.Optional(CONF_UPDATE_INTERVAL, default=DEFAULT_CONFIG[CONF_UPDATE_INTERVAL]): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=168,  # Max 1 week in hours
-                    step=1,
-                    mode=selector.NumberSelectorMode.BOX,
-                    unit_of_measurement="hours"
-                )
-            ),
-        })
-        
-        # Add Ximmio-specific fields conditionally
-        if is_ximmio_collector:
-            schema_dict.update({
-                vol.Optional(CONF_ADDRESS_ID, default=DEFAULT_CONFIG[CONF_ADDRESS_ID]): selector.TextSelector(),
-                vol.Optional(CONF_CUSTOMER_ID, default=DEFAULT_CONFIG[CONF_CUSTOMER_ID]): selector.TextSelector(),
-            })
-        
+        schema_dict = _build_resources_schema(
+            available_resources, defaults, is_ximmio_collector, include_name_fields=True
+        )
+
         return self.async_show_form(
             step_id="resources",
             data_schema=vol.Schema(schema_dict),
             errors=errors,
         )
-
-    async def _async_get_available_resources(self, address, custom_mapping=None):        
-        try:
-            from .API import get_wastedata_from_config
-        except ImportError as e:
-            _LOGGER.error("Failed to import API module: %s", e)
-            return {"error": "import_failed", "resources": []}
-
-        config = {
-            CONF_WASTE_COLLECTOR: address[CONF_WASTE_COLLECTOR],
-            CONF_POSTCODE: address[CONF_POSTCODE],
-            CONF_STREET_NUMBER: address[CONF_STREET_NUMBER],
-            CONF_SUFFIX: address.get(CONF_SUFFIX, ""),
-            CONF_RESOURCES: ["restafval"],
-            CONF_CUSTOM_MAPPING: custom_mapping or {},
-        }
-        collector_lower = address[CONF_WASTE_COLLECTOR].lower()
-        if collector_lower == "limburg.net":
-            config[CONF_CITY_NAME] = address.get(CONF_CITY_NAME, "")
-        if collector_lower in ["limburg.net", "recycleapp"]:
-            config[CONF_STREET_NAME] = address.get(CONF_STREET_NAME, "")
-        
-        try:
-            data = await self.hass.async_add_executor_job(get_wastedata_from_config, self.hass, config)
-            if not data:
-                _LOGGER.warning("No data returned from waste collector API for %s", address[CONF_WASTE_COLLECTOR])
-                return {"error": "no_data", "resources": []}
-            if not hasattr(data, "collections"):
-                _LOGGER.warning("Data object missing collections attribute for %s", address[CONF_WASTE_COLLECTOR])
-                return {"error": "invalid_data", "resources": []}
-            
-            await data.async_update()
-            resources = data.collections.get_available_waste_types()
-            if not resources:
-                _LOGGER.warning("No waste types found for %s at %s %s", 
-                              address[CONF_WASTE_COLLECTOR], address[CONF_POSTCODE], address[CONF_STREET_NUMBER])
-                return {"error": "no_resources", "resources": []}
-            
-            # Apply custom mapping to resources if provided
-            if custom_mapping:
-                mapped_resources = []
-                for resource in resources:
-                    # If there's a mapping for this resource, use the mapped name
-                    mapped_name = custom_mapping.get(resource, resource)
-                    mapped_resources.append(mapped_name)
-                resources = mapped_resources
-            
-            _LOGGER.debug("Found %d waste types for %s: %s", len(resources), address[CONF_WASTE_COLLECTOR], resources)
-            return {"error": None, "resources": resources}
-            
-        except Exception as e:
-            _LOGGER.error("Error fetching waste types for %s: %s", address[CONF_WASTE_COLLECTOR], e)
-            return {"error": "api_error", "resources": []}
 
     @staticmethod
     @callback
@@ -638,13 +822,12 @@ class AfvalbeheerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return AfvalbeheerOptionsFlowHandler()
 
 
-class AfvalbeheerOptionsFlowHandler(config_entries.OptionsFlow):
+class AfvalbeheerOptionsFlowHandler(_CustomCollectorSteps, config_entries.OptionsFlow):
     def __init__(self):
         self._collector = None
         self._address_input = {}
         self._custom_mapping = {}
         self._omrin_credentials = {}
-        self._custom_dates = []
 
     @property
     def config_entry(self):
@@ -653,8 +836,8 @@ class AfvalbeheerOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         if user_input is not None:
             self._collector = user_input[CONF_WASTE_COLLECTOR]
-            if self._collector == "Custom":
-                return await self.async_step_custom_name()
+            if _is_custom_collector(self._collector):
+                return await self.async_step_custom()
             return await self.async_step_address()
 
         # Get current collector and find case-insensitive match
@@ -676,138 +859,35 @@ class AfvalbeheerOptionsFlowHandler(config_entries.OptionsFlow):
             }),
         )
 
-    async def async_step_custom_name(self, user_input=None):
-        """Step to enter a custom name for the custom collector."""
-        errors = {}
-        current = {**self.config_entry.data, **self.config_entry.options}
-        current_name = current.get(CONF_NAME, "")
+    def _custom_current(self):
+        return {**self.config_entry.data, **self.config_entry.options}
 
-        if user_input is not None:
-            self._custom_name = user_input.get(CONF_NAME, "")
-            if not self._custom_name.strip():
-                errors["base"] = "name_required"
-            else:
-                return await self.async_step_custom_waste_type()
+    async def _async_finish_custom(self, data):
+        current = self._custom_current()
+        old_waste_type = current.get(CONF_CUSTOM_WASTE_TYPE)
+        if (_is_custom_collector(current.get(CONF_WASTE_COLLECTOR))
+                and old_waste_type and old_waste_type != data[CONF_CUSTOM_WASTE_TYPE]):
+            self._remove_custom_waste_type_sensor(current, old_waste_type)
 
-        return self.async_show_form(
-            step_id="custom_name",
-            data_schema=vol.Schema({
-                vol.Required(CONF_NAME, default=current_name): selector.TextSelector(
-                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
-                ),
-            }),
-            errors=errors,
-        )
+        title = _custom_entry_title(data[CONF_NAME], data[CONF_CUSTOM_WASTE_TYPE])
+        if self.config_entry.title != title:
+            self.hass.config_entries.async_update_entry(self.config_entry, title=title)
+        return self.async_create_entry(title="", data=data)
 
-    async def async_step_custom_waste_type(self, user_input=None):
-        """Step to select a waste type from predefined list."""
-        errors = {}
-        current = {**self.config_entry.data, **self.config_entry.options}
-        current_waste_type = current.get(CONF_CUSTOM_WASTE_TYPE, "")
+    def _remove_custom_waste_type_sensor(self, current, old_waste_type):
+        """Remove the sensor of the previous waste type, which no longer gets updates."""
+        from homeassistant.helpers import entity_registry as er
+        from .sensor import _format_unique_id
 
-        if user_input is not None:
-            self._custom_waste_type = user_input[CONF_CUSTOM_WASTE_TYPE]
-            self._custom_dates = list(current.get(CONF_CUSTOM_DATES, []))
-            return await self.async_step_custom_dates()
-
-        return self.async_show_form(
-            step_id="custom_waste_type",
-            data_schema=vol.Schema({
-                vol.Required(CONF_CUSTOM_WASTE_TYPE, default=current_waste_type): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=PREDEFINED_WASTE_TYPES,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-            }),
-            errors=errors,
-        )
-
-    async def async_step_custom_dates(self, user_input=None):
-        """Step to add collection dates one at a time."""
-        errors = {}
-        if user_input is not None:
-            date_value = user_input.get("date")
-            add_another = user_input.get("add_another", False)
-
-            if date_value:
-                self._custom_dates.append(date_value)
-
-            if add_another:
-                return await self.async_step_custom_dates()
-            else:
-                if not self._custom_dates:
-                    errors["base"] = "no_dates"
-                else:
-                    return await self.async_step_custom_options()
-
-        dates_description = ""
-        if self._custom_dates:
-            dates_description = "\n".join(
-                f"• {d}" for d in sorted(self._custom_dates)
-            )
-
-        return self.async_show_form(
-            step_id="custom_dates",
-            data_schema=vol.Schema({
-                vol.Required("date"): selector.DateSelector(),
-                vol.Optional("add_another", default=True): selector.BooleanSelector(),
-            }),
-            errors=errors,
-            description_placeholders={"dates_added": dates_description or "None yet"},
-        )
-
-    async def async_step_custom_options(self, user_input=None):
-        """Step to configure display options for the custom collector."""
-        errors = {}
-        current = {**self.config_entry.data, **self.config_entry.options}
-
-        if user_input is not None:
-            new_options = {
-                CONF_WASTE_COLLECTOR: "Custom",
-                CONF_NAME: self._custom_name,
-                CONF_CUSTOM_WASTE_TYPE: self._custom_waste_type,
-                CONF_CUSTOM_DATES: sorted(self._custom_dates),
-                CONF_RESOURCES: [self._custom_waste_type],
-                CONF_NAME_PREFIX: user_input.get(CONF_NAME_PREFIX, DEFAULT_CONFIG[CONF_NAME_PREFIX]),
-                CONF_DATE_FORMAT: user_input.get(CONF_DATE_FORMAT, DEFAULT_CONFIG[CONF_DATE_FORMAT]),
-                CONF_UPCOMING: user_input.get(CONF_UPCOMING, DEFAULT_CONFIG[CONF_UPCOMING]),
-                CONF_DATE_ONLY: user_input.get(CONF_DATE_ONLY, DEFAULT_CONFIG[CONF_DATE_ONLY]),
-                CONF_DATE_OBJECT: user_input.get(CONF_DATE_OBJECT, DEFAULT_CONFIG[CONF_DATE_OBJECT]),
-                CONF_TRANSLATE_DAYS: user_input.get(CONF_TRANSLATE_DAYS, DEFAULT_CONFIG[CONF_TRANSLATE_DAYS]),
-                CONF_DAY_OF_WEEK: user_input.get(CONF_DAY_OF_WEEK, DEFAULT_CONFIG[CONF_DAY_OF_WEEK]),
-                CONF_DAY_OF_WEEK_ONLY: user_input.get(CONF_DAY_OF_WEEK_ONLY, DEFAULT_CONFIG[CONF_DAY_OF_WEEK_ONLY]),
-                CONF_ALWAYS_SHOW_DAY: user_input.get(CONF_ALWAYS_SHOW_DAY, DEFAULT_CONFIG[CONF_ALWAYS_SHOW_DAY]),
-                CONF_BUILT_IN_ICONS: user_input.get(CONF_BUILT_IN_ICONS, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS]),
-                CONF_BUILT_IN_ICONS_NEW: user_input.get(CONF_BUILT_IN_ICONS_NEW, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS_NEW]),
-                CONF_DISABLE_ICONS: user_input.get(CONF_DISABLE_ICONS, DEFAULT_CONFIG[CONF_DISABLE_ICONS]),
-                CONF_CUSTOM_MAPPING: {},
-                CONF_POSTCODE: "",
-                CONF_STREET_NUMBER: "",
-                CONF_SUFFIX: "",
-            }
-            return self.async_create_entry(title="", data=new_options)
-
-        schema_dict = {
-            vol.Optional(CONF_NAME_PREFIX, default=current.get(CONF_NAME_PREFIX, DEFAULT_CONFIG[CONF_NAME_PREFIX])): selector.BooleanSelector(),
-            vol.Optional(CONF_DATE_FORMAT, default=current.get(CONF_DATE_FORMAT, DEFAULT_CONFIG[CONF_DATE_FORMAT])): selector.TextSelector(),
-            vol.Optional(CONF_UPCOMING, default=current.get(CONF_UPCOMING, DEFAULT_CONFIG[CONF_UPCOMING])): selector.BooleanSelector(),
-            vol.Optional(CONF_DATE_ONLY, default=current.get(CONF_DATE_ONLY, DEFAULT_CONFIG[CONF_DATE_ONLY])): selector.BooleanSelector(),
-            vol.Optional(CONF_DATE_OBJECT, default=current.get(CONF_DATE_OBJECT, DEFAULT_CONFIG[CONF_DATE_OBJECT])): selector.BooleanSelector(),
-            vol.Optional(CONF_TRANSLATE_DAYS, default=current.get(CONF_TRANSLATE_DAYS, DEFAULT_CONFIG[CONF_TRANSLATE_DAYS])): selector.BooleanSelector(),
-            vol.Optional(CONF_DAY_OF_WEEK, default=current.get(CONF_DAY_OF_WEEK, DEFAULT_CONFIG[CONF_DAY_OF_WEEK])): selector.BooleanSelector(),
-            vol.Optional(CONF_DAY_OF_WEEK_ONLY, default=current.get(CONF_DAY_OF_WEEK_ONLY, DEFAULT_CONFIG[CONF_DAY_OF_WEEK_ONLY])): selector.BooleanSelector(),
-            vol.Optional(CONF_ALWAYS_SHOW_DAY, default=current.get(CONF_ALWAYS_SHOW_DAY, DEFAULT_CONFIG[CONF_ALWAYS_SHOW_DAY])): selector.BooleanSelector(),
-            vol.Optional(CONF_BUILT_IN_ICONS, default=current.get(CONF_BUILT_IN_ICONS, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS])): selector.BooleanSelector(),
-            vol.Optional(CONF_BUILT_IN_ICONS_NEW, default=current.get(CONF_BUILT_IN_ICONS_NEW, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS_NEW])): selector.BooleanSelector(),
-            vol.Optional(CONF_DISABLE_ICONS, default=current.get(CONF_DISABLE_ICONS, DEFAULT_CONFIG[CONF_DISABLE_ICONS])): selector.BooleanSelector(),
-        }
-
-        return self.async_show_form(
-            step_id="custom_options",
-            data_schema=vol.Schema(schema_dict),
-            errors=errors,
-        )
+        entity_registry = er.async_get(self.hass)
+        old_unique_id = _format_unique_id(
+            current.get(CONF_NAME), current.get(CONF_NAME_PREFIX), current[CONF_WASTE_COLLECTOR].lower(),
+            old_waste_type, self.config_entry.entry_id,
+        ).lower()
+        entity_id = entity_registry.async_get_entity_id("sensor", DOMAIN, old_unique_id)
+        if entity_id:
+            _LOGGER.info("Removing sensor %s for previous custom waste type %s", entity_id, old_waste_type)
+            entity_registry.async_remove(entity_id)
 
     async def async_step_address(self, user_input=None):
         collector = self._collector
@@ -947,20 +1027,10 @@ class AfvalbeheerOptionsFlowHandler(config_entries.OptionsFlow):
         # Get custom mapping if it was set in previous step
         custom_mapping = getattr(self, '_custom_mapping', {})
         
-        # Create a temporary instance to access the shared helper method
-        temp_flow = AfvalbeheerConfigFlow()
-        temp_flow.hass = self.hass
-        result = await temp_flow._async_get_available_resources(self._address_input, custom_mapping)
+        result = await _async_get_available_resources(self.hass, self._address_input, custom_mapping)
         
         if result["error"]:
-            error_map = {
-                "import_failed": "import_error",
-                "no_data": "connection_error", 
-                "invalid_data": "invalid_collector",
-                "no_resources": "no_resources",
-                "api_error": "connection_error"
-            }
-            errors["base"] = error_map.get(result["error"], "unknown_error")
+            errors["base"] = RESOURCES_ERROR_MAP.get(result["error"], "unknown_error")
         
         available_resources = result["resources"]
         current = {**self.config_entry.data, **self.config_entry.options}
@@ -988,6 +1058,7 @@ class AfvalbeheerOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             if not errors:
                 data = {**self._address_input, **user_input}
+                _apply_icon_set(data)
                 # Add custom mapping to data
                 data[CONF_CUSTOM_MAPPING] = custom_mapping
                 # Add Omrin credentials if provided
@@ -1003,58 +1074,26 @@ class AfvalbeheerOptionsFlowHandler(config_entries.OptionsFlow):
                 return self.async_create_entry(title="", data=data)
 
         # Build schema with conditional fields
-        schema_dict = {
-            vol.Required(CONF_RESOURCES, default=current.get(CONF_RESOURCES, available_resources)): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=available_resources,
-                    multiple=True,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            ),
-            # vol.Optional(CONF_NAME, default=current.get(CONF_NAME, DEFAULT_CONFIG[CONF_NAME])): selector.TextSelector(),
-            # vol.Optional(CONF_NAME_PREFIX, default=current.get(CONF_NAME_PREFIX, DEFAULT_CONFIG[CONF_NAME_PREFIX])): selector.BooleanSelector(),
+        defaults = {
+            CONF_RESOURCES: current.get(CONF_RESOURCES, available_resources),
+            CONF_DATE_FORMAT: current.get(CONF_DATE_FORMAT, DEFAULT_CONFIG[CONF_DATE_FORMAT]),
+            CONF_UPCOMING: current.get(CONF_UPCOMING, DEFAULT_CONFIG[CONF_UPCOMING]),
+            CONF_DATE_ONLY: current.get(CONF_DATE_ONLY, DEFAULT_CONFIG[CONF_DATE_ONLY]),
+            CONF_DATE_OBJECT: current.get(CONF_DATE_OBJECT, DEFAULT_CONFIG[CONF_DATE_OBJECT]),
+            CONF_LANGUAGE: _default_language(current),
+            CONF_DAY_OF_WEEK: current.get(CONF_DAY_OF_WEEK, DEFAULT_CONFIG[CONF_DAY_OF_WEEK]),
+            CONF_DAY_OF_WEEK_ONLY: current.get(CONF_DAY_OF_WEEK_ONLY, DEFAULT_CONFIG[CONF_DAY_OF_WEEK_ONLY]),
+            CONF_ALWAYS_SHOW_DAY: current.get(CONF_ALWAYS_SHOW_DAY, DEFAULT_CONFIG[CONF_ALWAYS_SHOW_DAY]),
+            CONF_ICON_SET: _icon_set_from_config(current),
+            CONF_UPDATE_INTERVAL: current.get(CONF_UPDATE_INTERVAL, DEFAULT_CONFIG[CONF_UPDATE_INTERVAL]),
+            CONF_ADDRESS_ID: current.get(CONF_ADDRESS_ID, DEFAULT_CONFIG[CONF_ADDRESS_ID]),
+            CONF_CUSTOMER_ID: current.get(CONF_CUSTOMER_ID, DEFAULT_CONFIG[CONF_CUSTOMER_ID]),
         }
-        
-        # Date and time settings
-        schema_dict.update({
-            vol.Optional(CONF_DATE_FORMAT, default=current.get(CONF_DATE_FORMAT, DEFAULT_CONFIG[CONF_DATE_FORMAT])): selector.TextSelector(),
-            vol.Optional(CONF_UPCOMING, default=current.get(CONF_UPCOMING, DEFAULT_CONFIG[CONF_UPCOMING])): selector.BooleanSelector(),
-            vol.Optional(CONF_DATE_ONLY, default=current.get(CONF_DATE_ONLY, DEFAULT_CONFIG[CONF_DATE_ONLY])): selector.BooleanSelector(),
-            vol.Optional(CONF_DATE_OBJECT, default=current.get(CONF_DATE_OBJECT, DEFAULT_CONFIG[CONF_DATE_OBJECT])): selector.BooleanSelector(),
-            vol.Optional(CONF_TRANSLATE_DAYS, default=current.get(CONF_TRANSLATE_DAYS, DEFAULT_CONFIG[CONF_TRANSLATE_DAYS])): selector.BooleanSelector(),
-            vol.Optional(CONF_DAY_OF_WEEK, default=current.get(CONF_DAY_OF_WEEK, DEFAULT_CONFIG[CONF_DAY_OF_WEEK])): selector.BooleanSelector(),
-            vol.Optional(CONF_DAY_OF_WEEK_ONLY, default=current.get(CONF_DAY_OF_WEEK_ONLY, DEFAULT_CONFIG[CONF_DAY_OF_WEEK_ONLY])): selector.BooleanSelector(),
-            vol.Optional(CONF_ALWAYS_SHOW_DAY, default=current.get(CONF_ALWAYS_SHOW_DAY, DEFAULT_CONFIG[CONF_ALWAYS_SHOW_DAY])): selector.BooleanSelector(),
-        })
-        
-        # Icon settings
-        schema_dict.update({
-            vol.Optional(CONF_BUILT_IN_ICONS, default=current.get(CONF_BUILT_IN_ICONS, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS])): selector.BooleanSelector(),
-            vol.Optional(CONF_BUILT_IN_ICONS_NEW, default=current.get(CONF_BUILT_IN_ICONS_NEW, DEFAULT_CONFIG[CONF_BUILT_IN_ICONS_NEW])): selector.BooleanSelector(),
-            vol.Optional(CONF_DISABLE_ICONS, default=current.get(CONF_DISABLE_ICONS, DEFAULT_CONFIG[CONF_DISABLE_ICONS])): selector.BooleanSelector(),
-        })
-        
-        # Advanced settings
-        schema_dict.update({
-            vol.Optional(CONF_UPDATE_INTERVAL, default=current.get(CONF_UPDATE_INTERVAL, DEFAULT_CONFIG[CONF_UPDATE_INTERVAL])): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=168,  # Max 1 week in hours
-                    step=1,
-                    mode=selector.NumberSelectorMode.BOX,
-                    unit_of_measurement="hours"
-                )
-            ),
-        })
-        
-        # Add Ximmio-specific fields conditionally
-        if is_ximmio_collector:
-            schema_dict.update({
-                vol.Optional(CONF_ADDRESS_ID, default=current.get(CONF_ADDRESS_ID, DEFAULT_CONFIG[CONF_ADDRESS_ID])): selector.TextSelector(),
-                vol.Optional(CONF_CUSTOMER_ID, default=current.get(CONF_CUSTOMER_ID, DEFAULT_CONFIG[CONF_CUSTOMER_ID])): selector.TextSelector(),
-            })
-        
-        # Custom mapping is now handled in the mapping step
+        # CONF_NAME/CONF_NAME_PREFIX are intentionally excluded here (include_name_fields=False):
+        # they cannot be changed once the entry exists, since they are part of the unique_id.
+        schema_dict = _build_resources_schema(
+            available_resources, defaults, is_ximmio_collector, include_name_fields=False
+        )
 
         return self.async_show_form(
             step_id="resources",
@@ -1095,7 +1134,7 @@ class AfvalbeheerOptionsFlowHandler(config_entries.OptionsFlow):
                 _LOGGER.info("Removing entity with old custom mapping: %s", entity_id)
                 entity_registry.async_remove(entity_id)
                 removed_count += 1
-            except Exception as e:
+            except KeyError as e:
                 _LOGGER.error("Failed to remove entity %s: %s", entity_id, e)
         
         if removed_count > 0:

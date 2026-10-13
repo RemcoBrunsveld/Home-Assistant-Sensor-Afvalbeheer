@@ -5,12 +5,39 @@ from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util import dt as dt_util
 from homeassistant.components import persistent_notification
 
-from .const import *
+from .const import (
+    BURGERPORTAAL_COLLECTOR_IDS,
+    CONF_ADDRESS_ID,
+    CONF_CITY_NAME,
+    CONF_CUSTOMER_ID,
+    CONF_CUSTOM_DATES,
+    CONF_CUSTOM_MAPPING,
+    CONF_CUSTOM_WASTE_TYPE,
+    CONF_EMAIL,
+    CONF_PASSWORD,
+    CONF_POSTCODE,
+    CONF_PRINT_AVAILABLE_WASTE_TYPES,
+    CONF_PRINT_AVAILABLE_WASTE_TYPE_SLUGS,
+    CONF_STREET_NAME,
+    CONF_STREET_NUMBER,
+    CONF_SUFFIX,
+    CONF_UPDATE_INTERVAL,
+    CONF_WASTE_COLLECTOR,
+    DEPRECATED_AND_NEW_WASTECOLLECTORS,
+    KLIKOGROEP_COLLECTOR_IDS,
+    LANGUAGE_NL,
+    NOTIFICATION_ID,
+    OPZET_COLLECTOR_URLS,
+    SCHEDULE_UPDATE_INTERVAL,
+    XIMMIO_COLLECTOR_IDS,
+)
+from .translation import resolve_language, text
 from .models import WasteCollectionRepository
 from .collectors import (
     XimmioCollector, BurgerportaalCollector, OpzetCollector, KlikogroepCollector,
     AfvalAlertCollector, AfvalwijzerCollector, AmsterdamCollector, CirculusCollector, CleanprofsCollector,
-    CustomCollector, DeAfvalAppCollector, LimburgNetCollector, IradoCollector, MontferlandNetCollector, OmrinCollector,
+    CustomCollector, DeAfvalAppCollector, DemoCollector, FrisseKlikoCollector, LimburgNetCollector, IradoCollector,
+    MontferlandNetCollector, OmrinCollector,
     RD4Collector, RecycleApp, ReinisCollector, ROVACollector, StraatbeeldCollector
 )
 
@@ -23,7 +50,7 @@ class WasteData(object):
     Manages waste data and schedules updates.
     """
 
-    def __init__(self, hass, waste_collector, city_name, postcode, street_name, street_number, suffix, custom_mapping, address_id, print_waste_type, print_waste_type_slugs, update_interval, customer_id, email=None, password=None, custom_dates=None, custom_waste_type=None):
+    def __init__(self, hass, waste_collector, city_name, postcode, street_name, street_number, suffix, custom_mapping, address_id, print_waste_type, print_waste_type_slugs, update_interval, customer_id, email=None, password=None, language=None, custom_dates=None, custom_waste_type=None):
         self.hass = hass
         self.waste_collector = waste_collector
         self.city_name = city_name
@@ -40,6 +67,7 @@ class WasteData(object):
         self.email = email
         self.password = password
         self.custom_mapping = custom_mapping
+        self.language = language or LANGUAGE_NL
         self.custom_dates = custom_dates
         self.custom_waste_type = custom_waste_type
         self.__select_collector()
@@ -55,6 +83,7 @@ class WasteData(object):
             "afvalalert": (AfvalAlertCollector, common_args),
             "amsterdam": (AmsterdamCollector, common_args),
             "deafvalapp": (DeAfvalAppCollector, common_args),
+            "demo": (DemoCollector, common_args),
             "circulus": (CirculusCollector, common_args),
             "limburg.net": (LimburgNetCollector, common_args + [self.street_name, self.city_name]),
             "irado": (IradoCollector, common_args),
@@ -64,9 +93,10 @@ class WasteData(object):
             "reinis": (ReinisCollector, common_args),
             "rd4": (RD4Collector, common_args),
             "cleanprofs": (CleanprofsCollector, common_args),
+            "frissekliko": (FrisseKlikoCollector, common_args + [self.street_name]),
             "rova": (ROVACollector, common_args),
             "drimmelen": (StraatbeeldCollector, common_args),
-            "custom": (CustomCollector, [self.hass, self.custom_waste_type, self.custom_dates, self.custom_mapping]),
+            "custom": (CustomCollector, common_args + [self.custom_waste_type, self.custom_dates]),
             **{key: (BurgerportaalCollector, common_args) for key in BURGERPORTAAL_COLLECTOR_IDS.keys()},
             **{key: (OpzetCollector, common_args) for key in OPZET_COLLECTOR_URLS.keys()},
             **{key: (KlikogroepCollector, common_args) for key in KLIKOGROEP_COLLECTOR_IDS.keys()},
@@ -79,7 +109,7 @@ class WasteData(object):
         else:
             persistent_notification.create(
                 self.hass,
-                f'Waste collector "{self.waste_collector}" not found!',
+                text(self.language, "notifications.collector_not_found", collector=self.waste_collector),
                 f'Afvalwijzer {self.waste_collector}',
                 f'{NOTIFICATION_ID}_collectornotfound_{self.waste_collector}'
             )
@@ -91,25 +121,27 @@ class WasteData(object):
 
     async def async_update(self, *_):
         _LOGGER.debug("Performing async update")
-        await self.collector.update()
-        if self.update_interval is not None and self.update_interval != 0:
-            await self.schedule_update(timedelta(hours=self.update_interval))
-        else:
-            await self.schedule_update(SCHEDULE_UPDATE_INTERVAL)
+        try:
+            await self.collector.update()
+        finally:
+            if self.update_interval is not None and self.update_interval != 0:
+                await self.schedule_update(timedelta(hours=self.update_interval))
+            else:
+                await self.schedule_update(SCHEDULE_UPDATE_INTERVAL)
         if self.print_waste_type:
             persistent_notification.create(
                 self.hass,
-                f'Available waste types: {", ".join(self.collector.collections.get_available_waste_types())}',
+                text(self.language, "notifications.available_waste_types", types=", ".join(self.collector.collections.get_available_waste_types())),
                 f'Afvalwijzer {self.waste_collector}',
                 f'{NOTIFICATION_ID}_availablewastetypes_{self.waste_collector}')
             self.print_waste_type = False
         if self.print_waste_type_slugs:
             persistent_notification.create(
                 self.hass,
-                f'Waste type slugs used by API: {", ".join(self.collector.collections.get_available_waste_type_slugs())}',
+                text(self.language, "notifications.available_waste_type_slugs", slugs=", ".join(self.collector.collections.get_available_waste_type_slugs())),
                 f'Afvalwijzer {self.waste_collector}',
                 f'{NOTIFICATION_ID}_availablewastetypeslugs_{self.waste_collector}')
-            self.print_waste_type = False
+            self.print_waste_type_slugs = False
 
     @property
     def collections(self):
@@ -135,16 +167,24 @@ def get_wastedata_from_config(hass, config):
     custom_mapping = config.get(CONF_CUSTOM_MAPPING)
     custom_dates = config.get(CONF_CUSTOM_DATES)
     custom_waste_type = config.get(CONF_CUSTOM_WASTE_TYPE)
+    language = resolve_language(config)
 
     if waste_collector == "custom":
-        config["id"] = _format_id(waste_collector, custom_waste_type or "unknown", "0")
+        # Custom entries have no address, so keep the per-entry uuid from the config flow;
+        # several custom entries for the same waste type would otherwise share one id.
+        config["id"] = config.get("id") or _format_id(waste_collector, custom_waste_type or "unknown", "0")
     else:
         config["id"] = _format_id(waste_collector, postcode, street_number)
 
     if waste_collector in DEPRECATED_AND_NEW_WASTECOLLECTORS:
         persistent_notification.create(
             hass,
-            f"Update your config to use {DEPRECATED_AND_NEW_WASTECOLLECTORS[waste_collector]}! You are still using {waste_collector} as a waste collector, which is deprecated. Check your automations and lovelace config, as the sensor names may also be changed!",
+            text(
+                language,
+                "notifications.deprecated_collector",
+                new_collector=DEPRECATED_AND_NEW_WASTECOLLECTORS[waste_collector],
+                old_collector=waste_collector,
+            ),
             f"Afvalbeheer {waste_collector}",
             f"{NOTIFICATION_ID}_update_config_{waste_collector}",
         )
@@ -153,7 +193,7 @@ def get_wastedata_from_config(hass, config):
     if waste_collector in ["limburg.net"] and not city_name:
         persistent_notification.create(
             hass,
-            f"Config invalid! Cityname is required for {waste_collector}",
+            text(language, "notifications.city_required", collector=waste_collector),
             f"Afvalbeheer {waste_collector}",
             f"{NOTIFICATION_ID}_invalid_config_{waste_collector}",
         )
@@ -162,7 +202,7 @@ def get_wastedata_from_config(hass, config):
     if waste_collector in ["limburg.net", "recycleapp"] and not street_name:
         persistent_notification.create(
             hass,
-            f"Config invalid! Streetname is required for {waste_collector}",
+            text(language, "notifications.street_required", collector=waste_collector),
             f"Afvalbeheer {waste_collector}",
             f"{NOTIFICATION_ID}_invalid_config_{waste_collector}",
         )
@@ -184,6 +224,7 @@ def get_wastedata_from_config(hass, config):
         customer_id,
         email,
         password,
+        language,
         custom_dates,
         custom_waste_type,
     )
