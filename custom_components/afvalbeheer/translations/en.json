@@ -82,7 +82,7 @@
                 }
             },
             "custom": {
-                "title": "Overig",
+                "title": "Other",
                 "description": "Enter a name and choose the waste type for which you enter the collection dates yourself",
                 "data": {
                     "name": "Name",
@@ -110,7 +110,7 @@
             },
             "custom_options": {
                 "title": "Display Options",
-                "description": "Configure how the Overig sensors are displayed",
+                "description": "Configure how the sensors for these collection dates are displayed",
                 "data": {
                     "wastecollectornameprefix": "Use Name Prefix",
                     "dateformat": "Date Format",
@@ -235,7 +235,7 @@
                 }
             },
             "custom": {
-                "title": "Overig",
+                "title": "Other",
                 "description": "Enter a name and choose the waste type for which you enter the collection dates yourself",
                 "data": {
                     "name": "Name",
@@ -263,7 +263,7 @@
             },
             "custom_options": {
                 "title": "Display Options",
-                "description": "Configure how the Overig sensors are displayed",
+                "description": "Configure how the sensors for these collection dates are displayed",
                 "data": {
                     "wastecollectornameprefix": "Use Name Prefix",
                     "dateformat": "Date Format",
@@ -370,6 +370,11 @@
                 "classic_bold": "Classic bold",
                 "modern": "Modern",
                 "modern_bold": "Modern bold"
+            }
+        },
+        "wastecollector": {
+            "options": {
+                "Overig": "Other"
             }
         }
     }

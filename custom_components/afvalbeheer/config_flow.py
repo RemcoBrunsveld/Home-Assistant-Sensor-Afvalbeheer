@@ -98,6 +98,17 @@ def _icon_set_selector():
     )
 
 
+def _waste_collector_selector():
+    # Collector names are shown as-is; only CUSTOM_COLLECTOR has a translated label
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=WASTE_COLLECTORS,
+            mode=selector.SelectSelectorMode.DROPDOWN,
+            translation_key=CONF_WASTE_COLLECTOR,
+        )
+    )
+
+
 def _build_resources_schema(available_resources, defaults, is_ximmio_collector, include_name_fields):
     """
     Build the data schema for the "resources" step, shared between the setup
@@ -627,7 +638,7 @@ class AfvalbeheerConfigFlow(_CustomCollectorSteps, config_entries.ConfigFlow, do
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({
-                vol.Required(CONF_WASTE_COLLECTOR, default=""): vol.In(WASTE_COLLECTORS),
+                vol.Required(CONF_WASTE_COLLECTOR, default=""): _waste_collector_selector(),
             }),
             errors=errors,
         )
@@ -860,7 +871,7 @@ class AfvalbeheerOptionsFlowHandler(_CustomCollectorSteps, config_entries.Option
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
-                vol.Required(CONF_WASTE_COLLECTOR, default=default_collector): vol.In(WASTE_COLLECTORS),
+                vol.Required(CONF_WASTE_COLLECTOR, default=default_collector): _waste_collector_selector(),
             }),
         )
 

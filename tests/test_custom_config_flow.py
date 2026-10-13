@@ -187,11 +187,23 @@ async def test_yaml_import_keeps_custom_dates_and_waste_type(hass):
     assert result["data"][CONF_RESOURCES] == ["Papier"]
 
 
-async def test_collector_dropdown_lists_overig_last(hass):
+async def test_collector_dropdown_lists_overig_last_with_translated_label(hass):
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
-    options = result["data_schema"].schema[CONF_WASTE_COLLECTOR].container
-    assert options[-1] == "Overig"
-    assert "Custom" not in options
+    config = result["data_schema"].schema[CONF_WASTE_COLLECTOR].config
+    assert config["options"][-1] == "Overig"
+    assert config["translation_key"] == CONF_WASTE_COLLECTOR
+
+
+def test_collector_label_is_translated_per_language():
+    import json
+    from pathlib import Path
+
+    translations = Path(__file__).parent.parent / "custom_components" / "afvalbeheer" / "translations"
+    labels = {
+        path.stem: json.loads(path.read_text(encoding="utf-8"))["selector"][CONF_WASTE_COLLECTOR]["options"]["Overig"]
+        for path in translations.glob("*.json")
+    }
+    assert labels == {"nl": "Overig", "en": "Other", "fr": "Autre", "de": "Sonstige", "el": "Άλλο"}
 
 
 async def test_dates_step_add_another_off_adds_date_and_continues(hass):

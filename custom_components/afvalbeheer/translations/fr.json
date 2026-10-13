@@ -82,7 +82,7 @@
                 }
             },
             "custom": {
-                "title": "Overig",
+                "title": "Autre",
                 "description": "Entrez un nom et choisissez le type de déchet dont vous saisissez vous-même les dates de collecte",
                 "data": {
                     "name": "Nom",
@@ -110,7 +110,7 @@
             },
             "custom_options": {
                 "title": "Options d'affichage",
-                "description": "Configurez l'affichage des capteurs Overig",
+                "description": "Configurez l'affichage des capteurs pour ces dates de collecte",
                 "data": {
                     "wastecollectornameprefix": "Utiliser Préfixe de Nom",
                     "dateformat": "Format de Date",
@@ -235,7 +235,7 @@
                 }
             },
             "custom": {
-                "title": "Overig",
+                "title": "Autre",
                 "description": "Entrez un nom et choisissez le type de déchet dont vous saisissez vous-même les dates de collecte",
                 "data": {
                     "name": "Nom",
@@ -263,7 +263,7 @@
             },
             "custom_options": {
                 "title": "Options d'affichage",
-                "description": "Configurez l'affichage des capteurs Overig",
+                "description": "Configurez l'affichage des capteurs pour ces dates de collecte",
                 "data": {
                     "wastecollectornameprefix": "Utiliser Préfixe de Nom",
                     "dateformat": "Format de Date",
@@ -370,6 +370,11 @@
                 "classic_bold": "Classique gras",
                 "modern": "Moderne",
                 "modern_bold": "Moderne gras"
+            }
+        },
+        "wastecollector": {
+            "options": {
+                "Overig": "Autre"
             }
         }
     }

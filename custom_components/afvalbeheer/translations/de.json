@@ -82,7 +82,7 @@
                 }
             },
             "custom": {
-                "title": "Overig",
+                "title": "Sonstige",
                 "description": "Geben Sie einen Namen ein und wählen Sie die Abfallart, deren Abholtermine Sie selbst eingeben",
                 "data": {
                     "name": "Name",
@@ -110,7 +110,7 @@
             },
             "custom_options": {
                 "title": "Anzeigeoptionen",
-                "description": "Legen Sie fest, wie die Overig-Sensoren angezeigt werden",
+                "description": "Legen Sie fest, wie die Sensoren für diese Abholtermine angezeigt werden",
                 "data": {
                     "wastecollectornameprefix": "Namenspräfix verwenden",
                     "dateformat": "Datumsformat",
@@ -235,7 +235,7 @@
                 }
             },
             "custom": {
-                "title": "Overig",
+                "title": "Sonstige",
                 "description": "Geben Sie einen Namen ein und wählen Sie die Abfallart, deren Abholtermine Sie selbst eingeben",
                 "data": {
                     "name": "Name",
@@ -263,7 +263,7 @@
             },
             "custom_options": {
                 "title": "Anzeigeoptionen",
-                "description": "Legen Sie fest, wie die Overig-Sensoren angezeigt werden",
+                "description": "Legen Sie fest, wie die Sensoren für diese Abholtermine angezeigt werden",
                 "data": {
                     "wastecollectornameprefix": "Namenspräfix verwenden",
                     "dateformat": "Datumsformat",
@@ -370,6 +370,11 @@
                 "classic_bold": "Klassisch fett",
                 "modern": "Modern",
                 "modern_bold": "Modern fett"
+            }
+        },
+        "wastecollector": {
+            "options": {
+                "Overig": "Sonstige"
             }
         }
     }
