@@ -243,6 +243,10 @@ WASTE_TYPE_TEXTILE = 'Textiel'
 WASTE_TYPE_TREE = 'Kerstbomen'
 WASTE_TYPE_BULKYGARDENWASTE = 'Tuinafval'
 
+# Collector for manually entered collection dates (CustomCollector)
+CUSTOM_COLLECTOR = 'Overig'
+
+# Waste types offered for the manually entered collection dates
 PREDEFINED_WASTE_TYPES = [
     WASTE_TYPE_GREEN,
     WASTE_TYPE_GREY,

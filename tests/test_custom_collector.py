@@ -27,7 +27,7 @@ from custom_components.afvalbeheer.const import (
 
 def _custom_config(**overrides):
     config = {
-        CONF_WASTE_COLLECTOR: "Custom",
+        CONF_WASTE_COLLECTOR: "Overig",
         CONF_POSTCODE: "",
         CONF_STREET_NUMBER: "",
         CONF_RESOURCES: ["GFT"],
@@ -78,8 +78,8 @@ async def test_custom_entries_keep_their_own_id(hass):
 
 
 def test_is_custom_collector_is_case_insensitive():
-    assert _is_custom_collector("Custom")
-    assert _is_custom_collector("custom")
+    assert _is_custom_collector("Overig")
+    assert _is_custom_collector("overig")
     assert not _is_custom_collector("Demo")
     assert not _is_custom_collector(None)
 

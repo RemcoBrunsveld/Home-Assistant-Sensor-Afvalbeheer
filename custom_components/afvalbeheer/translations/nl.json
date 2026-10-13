@@ -82,32 +82,35 @@
                 }
             },
             "custom": {
-                "title": "Aangepaste inzamelaar",
-                "description": "Voer een naam in en kies het afvaltype voor deze aangepaste inzamelaar",
+                "title": "Overig",
+                "description": "Voer een naam in en kies het afvaltype waarvan je zelf de ophaaldatums invoert",
                 "data": {
                     "name": "Naam",
                     "customwastetype": "Afvaltype"
                 },
                 "data_description": {
-                    "name": "Een beschrijvende naam voor deze aangepaste inzamelaar, gebruikt in de sensornamen",
+                    "name": "Een beschrijvende naam voor deze invoer, gebruikt in de sensornamen",
                     "customwastetype": "Het type afval dat wordt opgehaald op de datums die je invoert"
                 }
             },
             "custom_dates": {
                 "title": "Ophaaldatums",
-                "description": "Kies een datum en verstuur om hem toe te voegen. Vink een datum uit om hem te verwijderen. Verstuur zonder nieuwe datum om verder te gaan.",
+                "description": "Kies een datum en klik op Toevoegen. Vink een datum uit om hem te verwijderen.",
                 "data": {
                     "customdates": "Ophaaldatums",
-                    "date": "Datum toevoegen"
+                    "date": "Datum toevoegen",
+                    "add_another": "Nog een datum toevoegen"
                 },
                 "data_description": {
                     "customdates": "Vink een datum uit om hem te verwijderen",
-                    "date": "Laat leeg om naar de volgende stap te gaan"
-                }
+                    "date": "Laat leeg om naar de volgende stap te gaan",
+                    "add_another": "Laat aan om hierna nog een datum toe te voegen. Zet uit om deze datum toe te voegen en door te gaan."
+                },
+                "submit": "Toevoegen"
             },
             "custom_options": {
                 "title": "Weergave-opties",
-                "description": "Configureer hoe de sensoren van de aangepaste inzamelaar worden weergegeven",
+                "description": "Configureer hoe de sensoren van Overig worden weergegeven",
                 "data": {
                     "wastecollectornameprefix": "Gebruik naam voorvoegsel",
                     "dateformat": "Datumformaat",
@@ -232,32 +235,35 @@
                 }
             },
             "custom": {
-                "title": "Aangepaste inzamelaar",
-                "description": "Voer een naam in en kies het afvaltype voor deze aangepaste inzamelaar",
+                "title": "Overig",
+                "description": "Voer een naam in en kies het afvaltype waarvan je zelf de ophaaldatums invoert",
                 "data": {
                     "name": "Naam",
                     "customwastetype": "Afvaltype"
                 },
                 "data_description": {
-                    "name": "Een beschrijvende naam voor deze aangepaste inzamelaar, gebruikt in de sensornamen",
+                    "name": "Een beschrijvende naam voor deze invoer, gebruikt in de sensornamen",
                     "customwastetype": "Het type afval dat wordt opgehaald op de datums die je invoert"
                 }
             },
             "custom_dates": {
                 "title": "Ophaaldatums",
-                "description": "Kies een datum en verstuur om hem toe te voegen. Vink een datum uit om hem te verwijderen. Verstuur zonder nieuwe datum om verder te gaan.",
+                "description": "Kies een datum en klik op Toevoegen. Vink een datum uit om hem te verwijderen.",
                 "data": {
                     "customdates": "Ophaaldatums",
-                    "date": "Datum toevoegen"
+                    "date": "Datum toevoegen",
+                    "add_another": "Nog een datum toevoegen"
                 },
                 "data_description": {
                     "customdates": "Vink een datum uit om hem te verwijderen",
-                    "date": "Laat leeg om naar de volgende stap te gaan"
-                }
+                    "date": "Laat leeg om naar de volgende stap te gaan",
+                    "add_another": "Laat aan om hierna nog een datum toe te voegen. Zet uit om deze datum toe te voegen en door te gaan."
+                },
+                "submit": "Toevoegen"
             },
             "custom_options": {
                 "title": "Weergave-opties",
-                "description": "Configureer hoe de sensoren van de aangepaste inzamelaar worden weergegeven",
+                "description": "Configureer hoe de sensoren van Overig worden weergegeven",
                 "data": {
                     "wastecollectornameprefix": "Gebruik naam voorvoegsel",
                     "dateformat": "Datumformaat",

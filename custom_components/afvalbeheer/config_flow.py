@@ -18,7 +18,7 @@ from .const import (
     CONF_DAY_OF_WEEK, CONF_DAY_OF_WEEK_ONLY, CONF_ALWAYS_SHOW_DAY,
     CONF_STREET_NAME, CONF_CITY_NAME, CONF_ADDRESS_ID, CONF_CUSTOMER_ID, CONF_UPDATE_INTERVAL,
     CONF_CUSTOM_MAPPING, DEFAULT_CONFIG, XIMMIO_COLLECTOR_IDS, CONF_EMAIL, CONF_PASSWORD,
-    CONF_CUSTOM_DATES, CONF_CUSTOM_WASTE_TYPE, PREDEFINED_WASTE_TYPES
+    CONF_CUSTOM_DATES, CONF_CUSTOM_WASTE_TYPE, CUSTOM_COLLECTOR, PREDEFINED_WASTE_TYPES
 )
 from .collectors.individual.custom import normalize_custom_dates
 
@@ -27,7 +27,7 @@ _LOGGER = logging.getLogger(__name__)
 WASTE_COLLECTORS = [
     "ACV", "Afval3xBeter", "Afvalstoffendienstkalender", "AfvalAlert",
     "Almere", "AlphenAanDenRijn", "Amsterdam", "AreaReiniging", "Assen", "Avalex", "Avri", "BAR",
-    "Berkelland", "Blink", "Breda", "Circulus", "Cleanprofs", "Cranendonck", "Custom",
+    "Berkelland", "Blink", "Breda", "Circulus", "Cleanprofs", "Cranendonck",
     "Cyclus", "DAR", "DeAfvalApp", "DeFryskeMarren", "Demo", "DenHaag", "Drimmelen", "FrisseKliko", "GAD",
     "Groningen", "Hellendoorn", "HVC", "Irado", "Limburg.NET", "Lingewaard", "Maassluis", "Meerlanden",
     "Middelburg-Vlissingen", "MijnAfvalwijzer", "Mijnafvalzaken", "Montferland",
@@ -35,7 +35,9 @@ WASTE_COLLECTORS = [
     "Purmerend", "RAD", "RecycleApp", "RD4", "RWM", "Reinis", "ROVA", "RMN", "Saver",
     "Schouwen-Duiveland", "Sliedrecht", "Spaarnelanden", "SudwestFryslan", "Tilburg",
     "TwenteMilieu", "Uithoorn", "Venlo","Venray", "Voorschoten", "Waalre", "Waardlanden", "Westland",
-    "Woerden", "ZRD"
+    "Woerden", "ZRD",
+    # Manually entered dates, listed last
+    CUSTOM_COLLECTOR,
 ]
 
 LANGUAGE_OPTIONS = [
@@ -184,9 +186,10 @@ def _build_display_schema(defaults):
     return schema_dict
 
 
-CUSTOM_COLLECTOR = "Custom"
 # Form field for adding one collection date; the selected dates are stored under CONF_CUSTOM_DATES
 CUSTOM_DATE_FIELD = "date"
+# Form toggle: stay on the dates step after adding a date (on) or continue (off)
+CUSTOM_ADD_ANOTHER_FIELD = "add_another"
 # Display options of the "custom_options" step that map 1:1 onto DEFAULT_CONFIG
 CUSTOM_DISPLAY_OPTION_KEYS = (
     CONF_NAME_PREFIX, CONF_DATE_FORMAT, CONF_UPCOMING, CONF_DATE_ONLY, CONF_DATE_OBJECT,
@@ -252,6 +255,7 @@ def _build_custom_dates_schema(dates):
             )
         )
     schema_dict[vol.Optional(CUSTOM_DATE_FIELD)] = selector.DateSelector()
+    schema_dict[vol.Optional(CUSTOM_ADD_ANOTHER_FIELD, default=True)] = selector.BooleanSelector()
     return schema_dict
 
 
@@ -301,8 +305,9 @@ class _CustomCollectorSteps:
             kept = user_input.get(CONF_CUSTOM_DATES, []) if self._custom_dates else []
             new_date = user_input.get(CUSTOM_DATE_FIELD)
             self._custom_dates = normalize_custom_dates([*kept, *([new_date] if new_date else [])])
-            # Submitting without a new date means the user is done adding dates
-            if not new_date:
+            # Stay on this step only to add another date; without a new date there is nothing to wait for
+            add_another = new_date and user_input.get(CUSTOM_ADD_ANOTHER_FIELD, True)
+            if not add_another:
                 if self._custom_dates:
                     return await self.async_step_custom_options()
                 errors["base"] = "no_dates"
@@ -869,9 +874,14 @@ class AfvalbeheerOptionsFlowHandler(_CustomCollectorSteps, config_entries.Option
                 and old_waste_type and old_waste_type != data[CONF_CUSTOM_WASTE_TYPE]):
             self._remove_custom_waste_type_sensor(current, old_waste_type)
 
-        title = _custom_entry_title(data[CONF_NAME], data[CONF_CUSTOM_WASTE_TYPE])
-        if self.config_entry.title != title:
-            self.hass.config_entries.async_update_entry(self.config_entry, title=title)
+        # Store the new title and options in one update: every entry update reloads the entry,
+        # and a title-only update would reload it with the old options (re-creating the old sensor).
+        # The options stored by async_create_entry below are then unchanged and cause no extra reload.
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            title=_custom_entry_title(data[CONF_NAME], data[CONF_CUSTOM_WASTE_TYPE]),
+            options=data,
+        )
         return self.async_create_entry(title="", data=data)
 
     def _remove_custom_waste_type_sensor(self, current, old_waste_type):

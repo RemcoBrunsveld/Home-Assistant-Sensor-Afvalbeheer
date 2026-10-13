@@ -82,32 +82,35 @@
                 }
             },
             "custom": {
-                "title": "Benutzerdefinierter Sammler",
-                "description": "Geben Sie einen Namen ein und wählen Sie die Abfallart für diesen benutzerdefinierten Sammler",
+                "title": "Overig",
+                "description": "Geben Sie einen Namen ein und wählen Sie die Abfallart, deren Abholtermine Sie selbst eingeben",
                 "data": {
                     "name": "Name",
                     "customwastetype": "Abfallart"
                 },
                 "data_description": {
-                    "name": "Ein beschreibender Name für diesen benutzerdefinierten Sammler, der in den Sensornamen verwendet wird",
+                    "name": "Ein beschreibender Name für diesen Eintrag, der in den Sensornamen verwendet wird",
                     "customwastetype": "Die Abfallart, die an den eingegebenen Daten abgeholt wird"
                 }
             },
             "custom_dates": {
                 "title": "Abholtermine",
-                "description": "Wählen Sie ein Datum und senden Sie ab, um es hinzuzufügen. Entfernen Sie den Haken bei einem Datum, um es zu löschen. Senden Sie ohne neues Datum ab, um fortzufahren.",
+                "description": "Wählen Sie ein Datum und klicken Sie auf Hinzufügen. Entfernen Sie den Haken bei einem Datum, um es zu löschen.",
                 "data": {
                     "customdates": "Abholtermine",
-                    "date": "Datum hinzufügen"
+                    "date": "Datum hinzufügen",
+                    "add_another": "Weiteres Datum hinzufügen"
                 },
                 "data_description": {
                     "customdates": "Entfernen Sie den Haken, um ein Datum zu löschen",
-                    "date": "Leer lassen, um zum nächsten Schritt zu gehen"
-                }
+                    "date": "Leer lassen, um zum nächsten Schritt zu gehen",
+                    "add_another": "Eingeschaltet lassen, um danach weitere Daten hinzuzufügen. Ausschalten, um dieses Datum hinzuzufügen und fortzufahren."
+                },
+                "submit": "Hinzufügen"
             },
             "custom_options": {
                 "title": "Anzeigeoptionen",
-                "description": "Legen Sie fest, wie die Sensoren des benutzerdefinierten Sammlers angezeigt werden",
+                "description": "Legen Sie fest, wie die Overig-Sensoren angezeigt werden",
                 "data": {
                     "wastecollectornameprefix": "Namenspräfix verwenden",
                     "dateformat": "Datumsformat",
@@ -232,32 +235,35 @@
                 }
             },
             "custom": {
-                "title": "Benutzerdefinierter Sammler",
-                "description": "Geben Sie einen Namen ein und wählen Sie die Abfallart für diesen benutzerdefinierten Sammler",
+                "title": "Overig",
+                "description": "Geben Sie einen Namen ein und wählen Sie die Abfallart, deren Abholtermine Sie selbst eingeben",
                 "data": {
                     "name": "Name",
                     "customwastetype": "Abfallart"
                 },
                 "data_description": {
-                    "name": "Ein beschreibender Name für diesen benutzerdefinierten Sammler, der in den Sensornamen verwendet wird",
+                    "name": "Ein beschreibender Name für diesen Eintrag, der in den Sensornamen verwendet wird",
                     "customwastetype": "Die Abfallart, die an den eingegebenen Daten abgeholt wird"
                 }
             },
             "custom_dates": {
                 "title": "Abholtermine",
-                "description": "Wählen Sie ein Datum und senden Sie ab, um es hinzuzufügen. Entfernen Sie den Haken bei einem Datum, um es zu löschen. Senden Sie ohne neues Datum ab, um fortzufahren.",
+                "description": "Wählen Sie ein Datum und klicken Sie auf Hinzufügen. Entfernen Sie den Haken bei einem Datum, um es zu löschen.",
                 "data": {
                     "customdates": "Abholtermine",
-                    "date": "Datum hinzufügen"
+                    "date": "Datum hinzufügen",
+                    "add_another": "Weiteres Datum hinzufügen"
                 },
                 "data_description": {
                     "customdates": "Entfernen Sie den Haken, um ein Datum zu löschen",
-                    "date": "Leer lassen, um zum nächsten Schritt zu gehen"
-                }
+                    "date": "Leer lassen, um zum nächsten Schritt zu gehen",
+                    "add_another": "Eingeschaltet lassen, um danach weitere Daten hinzuzufügen. Ausschalten, um dieses Datum hinzuzufügen und fortzufahren."
+                },
+                "submit": "Hinzufügen"
             },
             "custom_options": {
                 "title": "Anzeigeoptionen",
-                "description": "Legen Sie fest, wie die Sensoren des benutzerdefinierten Sammlers angezeigt werden",
+                "description": "Legen Sie fest, wie die Overig-Sensoren angezeigt werden",
                 "data": {
                     "wastecollectornameprefix": "Namenspräfix verwenden",
                     "dateformat": "Datumsformat",

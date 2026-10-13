@@ -82,32 +82,35 @@
                 }
             },
             "custom": {
-                "title": "Collecteur personnalisé",
-                "description": "Entrez un nom et choisissez le type de déchet pour ce collecteur personnalisé",
+                "title": "Overig",
+                "description": "Entrez un nom et choisissez le type de déchet dont vous saisissez vous-même les dates de collecte",
                 "data": {
                     "name": "Nom",
                     "customwastetype": "Type de déchet"
                 },
                 "data_description": {
-                    "name": "Un nom descriptif pour ce collecteur personnalisé, utilisé dans les noms des capteurs",
+                    "name": "Un nom descriptif pour cette entrée, utilisé dans les noms des capteurs",
                     "customwastetype": "Le type de déchet collecté aux dates que vous saisissez"
                 }
             },
             "custom_dates": {
                 "title": "Dates de collecte",
-                "description": "Choisissez une date et validez pour l'ajouter. Décochez une date pour la supprimer. Validez sans nouvelle date pour continuer.",
+                "description": "Choisissez une date et cliquez sur Ajouter. Décochez une date pour la supprimer.",
                 "data": {
                     "customdates": "Dates de collecte",
-                    "date": "Ajouter une date"
+                    "date": "Ajouter une date",
+                    "add_another": "Ajouter une autre date"
                 },
                 "data_description": {
                     "customdates": "Décochez une date pour la supprimer",
-                    "date": "Laissez vide pour passer à l'étape suivante"
-                }
+                    "date": "Laissez vide pour passer à l'étape suivante",
+                    "add_another": "Laissez activé pour ajouter d'autres dates ensuite. Désactivez pour ajouter cette date et continuer."
+                },
+                "submit": "Ajouter"
             },
             "custom_options": {
                 "title": "Options d'affichage",
-                "description": "Configurez l'affichage des capteurs du collecteur personnalisé",
+                "description": "Configurez l'affichage des capteurs Overig",
                 "data": {
                     "wastecollectornameprefix": "Utiliser Préfixe de Nom",
                     "dateformat": "Format de Date",
@@ -232,32 +235,35 @@
                 }
             },
             "custom": {
-                "title": "Collecteur personnalisé",
-                "description": "Entrez un nom et choisissez le type de déchet pour ce collecteur personnalisé",
+                "title": "Overig",
+                "description": "Entrez un nom et choisissez le type de déchet dont vous saisissez vous-même les dates de collecte",
                 "data": {
                     "name": "Nom",
                     "customwastetype": "Type de déchet"
                 },
                 "data_description": {
-                    "name": "Un nom descriptif pour ce collecteur personnalisé, utilisé dans les noms des capteurs",
+                    "name": "Un nom descriptif pour cette entrée, utilisé dans les noms des capteurs",
                     "customwastetype": "Le type de déchet collecté aux dates que vous saisissez"
                 }
             },
             "custom_dates": {
                 "title": "Dates de collecte",
-                "description": "Choisissez une date et validez pour l'ajouter. Décochez une date pour la supprimer. Validez sans nouvelle date pour continuer.",
+                "description": "Choisissez une date et cliquez sur Ajouter. Décochez une date pour la supprimer.",
                 "data": {
                     "customdates": "Dates de collecte",
-                    "date": "Ajouter une date"
+                    "date": "Ajouter une date",
+                    "add_another": "Ajouter une autre date"
                 },
                 "data_description": {
                     "customdates": "Décochez une date pour la supprimer",
-                    "date": "Laissez vide pour passer à l'étape suivante"
-                }
+                    "date": "Laissez vide pour passer à l'étape suivante",
+                    "add_another": "Laissez activé pour ajouter d'autres dates ensuite. Désactivez pour ajouter cette date et continuer."
+                },
+                "submit": "Ajouter"
             },
             "custom_options": {
                 "title": "Options d'affichage",
-                "description": "Configurez l'affichage des capteurs du collecteur personnalisé",
+                "description": "Configurez l'affichage des capteurs Overig",
                 "data": {
                     "wastecollectornameprefix": "Utiliser Préfixe de Nom",
                     "dateformat": "Format de Date",
